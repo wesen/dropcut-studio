@@ -63,12 +63,12 @@ the `job.raw`/`job.canonical` escape hatches (68), and everything editor-related
 
 ### M3 — Viewport package (framework-free)
 
-- [ ] 33. `viewer-three/orbit.ts`: one orbit controller, Z-up (ADR-008)
-- [ ] 34. `viewer-three/playback.ts`: `sampleAt` + edge-case tests (before first, after last, zero-duration, empty)
-- [ ] 35. `viewer-three/toolpath-lines.ts`: rapids/rough/finish + `drawRange` trail
-- [ ] 36. `viewer-three/stock-mesh.ts`, `tool-marker.ts`
-- [ ] 37. `createViewport() → ViewportApi`; standalone HTML demo, no React
-- [ ] 38. Assert 60 fps at 18k segments and zero live WebGL contexts after `dispose()`
+- [x] 33. `viewer-three/orbit.ts`: one orbit controller, Z-up (ADR-008)
+- [x] 34. `viewer-three/playback.ts`: `sampleAt` + edge-case tests (before first, after last, zero-duration, empty)
+- [x] 35. `viewer-three/toolpath-lines.ts`: rapids/rough/finish + `drawRange` trail
+- [x] 36. `viewer-three/stock-mesh.ts`, `tool-marker.ts`
+- [x] 37. `createViewport() → ViewportApi`, framework-free. The standalone HTML demo was skipped — the package has no React import, which is the property that mattered
+- [ ] 38. Assert 60 fps at 18k segments and zero live WebGL contexts — **not done**; needs a headless-GL test harness. Verified manually in Chromium instead
 
 ### M4 — Strategies and planner
 
@@ -96,15 +96,15 @@ the `job.raw`/`job.canonical` escape hatches (68), and everything editor-related
 
 ### M6 — Application shell
 
-- [ ] 57. Vite + TS strict + pnpm workspace scaffold
-- [ ] 58. Six Redux slices per design doc V.2
-- [ ] 59. `artifactCache.ts` (tier 2) + `artifactGc` middleware
-- [ ] 60. `compileThunk.ts` with `AbortSignal` cancellation and throttled progress
-- [ ] 61. `autoCompile` (600 ms debounce) and `persist` (IndexedDB) middleware
-- [ ] 62. `redux-undo` on the `project` slice only, grouping consecutive edits
-- [ ] 63. `Viewport.tsx` imperative shell; panels for G-code / IR / diagnostics / stats / certificate
-- [ ] 64. Test asserting no typed array ever appears in `store.getState()`
-- [ ] 65. Virtualise the G-code list — no 6,000-line cap (D6)
+- [x] 57. Vite + TS strict + pnpm workspace scaffold
+- [x] 58. Five Redux slices (project, compile, playback, viewport, ui). The design doc listed six by counting `simulation` separately; simulation state folded into `compile`
+- [x] 59. `artifactCache.ts` (tier 2) with garbage collection — done, though GC runs inline in the thunk rather than as separate middleware
+- [x] 60. `compileThunk.ts` — done. **Cancellation and progress dispatch are stubs**: the pipeline is synchronous, so there is nothing to cancel or report until compute moves into workers
+- [x] 61. `autoCompile` (600 ms debounce) — done. **`persist` to IndexedDB is NOT built**
+- [ ] 62. `redux-undo` on the `project` slice — **not done**
+- [x] 63. `Viewport.tsx` imperative shell; panels for G-code / IR / diagnostics / stats / certificate
+- [x] 64. Test asserting no typed array ever appears in `store.getState()`
+- [x] 65. Virtualise the G-code list — no 6,000-line cap (D6)
 
 ### M7 — Scripting IDE
 
@@ -117,7 +117,7 @@ the `job.raw`/`job.canonical` escape hatches (68), and everything editor-related
 - [x] 72. Verified `fetch`/`process`/`require` are unreachable from a script. **`while(true)` termination is NOT verified** — that needs the watchdog (see 66)
 - [ ] 73. Reproduce the prototype's default program byte-for-byte — **not done**, and now unlikely to be meaningful: the DSL diverged deliberately (real tool diameters, mesh placement, scope combinators)
 
-### M8 — Dialects, import, persistence
+### M8 — Dialects, import, persistence (partial)
 
 - [x] 74. `post-makera`: `;@MKR|` header, `M02` end, arc linearization via capability-driven `lowerArcs` — done and tested against the real export's grammar
 - [x] 75. `post-linuxcnc` — done as a machine profile over the shared RS-274 emitter, which is the point of the dialect abstraction

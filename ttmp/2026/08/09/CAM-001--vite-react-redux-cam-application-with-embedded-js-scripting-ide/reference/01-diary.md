@@ -905,3 +905,193 @@ SAFETY CERTIFICATE
   SKIP  holder collision      not checked — tool stickout and holder geometry unknown
   error budget           0.0105 mm  (chord-refinement 0.0100 · gcode-rounding 0.0005)
 ```
+
+---
+
+## Step 6: The application — M3 viewport and M6 React/Redux shell
+
+The headless core proved the architecture, but the ticket is named "Vite +
+React + Redux CAM application with embedded JS scripting IDE", so the UI is the
+deliverable rather than a nice-to-have. This step built it and verified it in a
+real browser rather than declaring it done on the strength of a passing build.
+
+The ordering paid off exactly as the design doc predicted. Because every
+algorithm was already tested in Node and the whole pipeline existed as one
+function the CLI calls, the app layer turned out to be assembly: a store, a
+thunk that calls that same function, and components that display what it
+returns. There was no algorithm debugging through a canvas.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 5)
+
+**Assistant interpretation:** Finish the milestones that make it an actual
+application, not just a library with a CLI.
+
+**Inferred user intent:** The ticket describes a Vite + React + Redux app with an
+embedded scripting IDE. A headless compiler is not that.
+
+**Commit:** `97f4b65`
+
+### What I did
+
+- **`@cam/viewer-three`** — framework-free. One orbit controller, the playback
+  clock, toolpath rendering split into cut/rapid/trail layers, stock box, tool
+  marker, and a `ViewportApi` imperative handle. `sampleAt` and
+  `buildRenderBuffers` are pure and tested separately from anything WebGL.
+- **`apps/studio`** — Vite 6, React 19, Redux Toolkit, CodeMirror 6. Five
+  slices, an artifact cache with garbage collection, a compile thunk that calls
+  the same pipeline the CLI does, auto-compile on a 600 ms debounce, and four
+  panels over one compile: G-code (virtualised), operations, diagnostics,
+  certificate.
+- Verified in Chromium via Playwright: loads, auto-compiles the 3D example,
+  renders, and shows the certificate.
+
+### Why
+
+Two things had to be true for the UI not to become the usual mess.
+
+First, the renderer must not know React exists. A 60 Hz WebGL loop and a
+component tree have incompatible update models, and the boundary only stays
+honest if the renderer is built framework-free and driven through an imperative
+handle. Building it as a standalone package made that structural rather than
+aspirational.
+
+Second, Redux must hold documents, not geometry. The three-tier rule is easy to
+state and easy to erode under deadline, so it is enforced by a test that walks
+the entire state tree and fails on any typed array, `Map`, `Set` or function.
+
+### What worked
+
+**The app layer really was assembly.** From an empty `apps/studio` to a working
+application was one pass, because the thunk is thirty lines of orchestration
+around functions that already had tests.
+
+**`serializableCheck` stayed on and stayed silent**, which is the evidence that
+the tier split is real rather than aspirational.
+
+**The certificate panel justifies the whole ADR-010 argument visually.** Seeing
+`PASS gouge — verified to 0.257 mm grid, 0.020 mm tolerance` next to
+`SKIP fixture collision — not checked: no fixture model defined` communicates
+the epistemic state in a way `safe: true` never could.
+
+### What didn't work
+
+**Immer rejected the readonly arrays** my slice types declared:
+
+```
+error TS4104: The type 'readonly Diagnostic[]' is 'readonly' and cannot be
+assigned to the mutable type 'WritableNonArrayDraft<Diagnostic>[]'
+```
+
+Drafts are mutable by design. Copying on assignment (`[...payload.diagnostics]`)
+is correct and cheap — these are tens of items, not thousands.
+
+**The stock box never reached the viewport.** I wired `setPart` and
+`setToolpath` and simply forgot `setStock`, so the work envelope was invisible.
+Caught by looking at the screenshot, which is precisely why looking at the
+screenshot is not optional.
+
+**I nearly shipped `Object.prototype.let$`.** While writing the viewport I added
+a tiny helper to Object.prototype so a Three object could be configured inline
+without a temp binding. That is genuine prototype pollution in a library
+package; I removed it before it went anywhere.
+
+### What I learned
+
+**The `onViewportChange` subscription needed real care.** The DRO subscribes to
+viewport ticks, but the viewport is created after the DRO mounts and is
+destroyed on unmount, so the subscription has to survive the handle changing
+under it. Two nested unsubscribes (one for the handle, one for the tick) is the
+honest shape; my first version returned the tick unsubscribe from the handle
+callback, which silently did nothing.
+
+**Virtualising the G-code list cost about thirty lines** and removes defect D6
+entirely. The prototype capped rendering at 6,000 lines, which silently
+truncates any real program — `MakeraBadge.nc` is 18,531. Absolute positioning
+inside a spacer div, plus a slice of the visible window, is all it takes.
+
+**Playback highlight through a CodeMirror `StateField` is meaningfully better
+than React state.** At 12 Hz, re-rendering the editor to change one line's
+background colour would be absurd; a `StateEffect` touches only the decoration
+set.
+
+### What was tricky to build
+
+**Deciding where the imperative escape hatches live.** The transport bar must
+call `play()` and `seek()` directly, and the DRO must write `textContent`
+directly, but threading refs down through the component tree to reach the
+viewport would be miserable. Two module-level singletons — `viewportHandle` and
+the editor view registration — are the honest answer: there is exactly one
+viewport and one editor, and putting the escape hatch in one named place beats
+pretending it does not exist. Both are documented as such.
+
+**Getting the compile thunk to not duplicate the CLI.** The temptation is to
+inline the pipeline into the thunk. It is not literally the same function today
+(the thunk dispatches progress actions the CLI does not need), but it calls the
+same package functions in the same order, and the store test asserts the same
+machine-difference behaviour the CLI test does. If they drift, both tests fail.
+
+### What warrants a second pair of eyes
+
+- **The part mesh is rendered but very dark** (`0x33383f` against a `0x101318`
+  background). It is technically visible and effectively not. A lighting or
+  material pass would help; I did not want to fiddle with aesthetics while
+  claiming to verify function.
+- **The bundle is 1.2 MB (370 KB gzipped)** with no code splitting. Three.js and
+  CodeMirror dominate. Fine for a study, worth splitting before anyone ships it.
+- **`compileProgress` is dispatched nowhere.** The action and reducer exist, and
+  the pipeline is synchronous so there is nothing to report yet. It becomes real
+  when compute moves into workers.
+- **Everything still runs on the main thread.** A large job will block the UI.
+  Cancellation is already a polled flag, so the worker move is mechanical, but
+  it has not been done.
+
+### What should be done in the future
+
+- Workers for planning and simulation (the last structural item from the design
+  doc that is not built).
+- Arc fitting, still unimplemented — only lowering exists.
+- Stock-aware link planning, to recover the travel the conservative retract
+  clamp costs.
+- Project persistence to IndexedDB and `redux-undo` on the `project` slice; both
+  are specified in the design doc and neither is built.
+
+### Code review instructions
+
+- `packages/viewer-three/src/playback.ts` first — it is pure, tested, and the
+  edge cases are the interesting part.
+- `apps/studio/src/state/store.test.ts` for the tier rule, especially
+  `findForbidden`.
+- `apps/studio/src/ui/Viewport.tsx` for the imperative-shell pattern: one mount
+  effect that never re-runs, then coarse syncs keyed on ids.
+- Run it: `cd apps/studio && npx vite` then open the printed URL. Edit the
+  script and watch it recompile; switch the machine dropdown to MAKERA Z1 and
+  watch the arcs disappear and the header change.
+
+### Technical details
+
+Final shape of the system:
+
+```text
+16 packages · 74 TypeScript files · ~13,000 lines · 214 tests
+
+packages/  units math ir machine geometry strategies planner analysis
+           compiler gcode-parser post-rs274 post-makera script-host
+           viewer-three
+apps/      cli studio
+```
+
+Milestone status against the design doc's eight:
+
+```text
+M1 core + round trip      done
+M2 geometry kernel         done
+M3 viewport                done
+M4 strategies + planner    done
+M5 analysis + certificate  done
+M6 React/Redux shell       done
+M7 scripting host + CLI    done
+M8 dialects + persistence  partial — dialects and import done,
+                                     project save/load not built
+```

@@ -94,3 +94,12 @@ Implemented M7: scripting sandbox, DSL, examples and headless CLI; 191 tests gre
 
 - /home/manuel/code/wesen/2026-08-09--cam-software/apps/cli/src/compile.ts — The whole pipeline in one function
 
+
+## 2026-08-09
+
+Implemented M3+M6: framework-free Three.js viewport and the Vite/React/Redux app; verified in Chromium; 214 tests (commit 97f4b65)
+
+### Related Files
+
+- /home/manuel/code/wesen/2026-08-09--cam-software/apps/studio/src/state/store.test.ts — Enforces the three-tier rule by walking the state tree
+
