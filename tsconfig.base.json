@@ -2,7 +2,9 @@
   "compilerOptions": {
     "target": "ES2022",
     "lib": [
-      "ES2022"
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
     ],
     "module": "ESNext",
     "moduleResolution": "bundler",
@@ -55,7 +57,11 @@
       ],
       "@cam/script-host": [
         "packages/script-host/src/index.ts"
+      ],
+      "@cam/viewer-three": [
+        "packages/viewer-three/src/index.ts"
       ]
-    }
+    },
+    "jsx": "react-jsx"
   }
 }
