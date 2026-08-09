@@ -1095,3 +1095,194 @@ M7 scripting host + CLI    done
 M8 dialects + persistence  partial — dialects and import done,
                                      project save/load not built
 ```
+
+## Step 7: Deploy to cam-ide.yolo.scapegoat.dev
+
+The studio has been running only on `vite dev` on this machine. This step put it
+on the Hetzner k3s cluster behind a real hostname and TLS certificate. There was
+no new application code: a Vite build with no server component is a pile of
+static files, and the cluster already runs a shared Caddy (`static-sites-host`)
+whose whole job is serving those out of one PVC. The work was therefore three
+config files in this repo and four in the GitOps repo.
+
+The interesting part was not the pipeline — that is a well-trodden path on this
+cluster with a written playbook — but a naming collision the request walked
+straight into, and one packaging detail that fails silently if you get it wrong.
+
+### Prompt Context
+
+**User prompt (verbatim):** "I want to deploy this to cam.yolo.scapegoat.dev,
+look at ~/code/wesen/go-go-golems/go-go-parc/Projects if there is something about
+that (we deployed a bit ago), or look at ~/code/wesen/2026-03-27--hetzner-k3s and
+terraform/ see if there's something there"
+
+**Assistant interpretation:** Find the existing deployment machinery for this
+cluster rather than inventing one, and use it to publish the studio.
+
+**Inferred user intent:** There is prior art; do not reinvent the pipeline, and
+do not hand back a plan when the platform can actually take the app today.
+
+**Follow-up (verbatim):** "maybe deploy to cam-ide.yolo.scapegoat.dev, leave the
+current one intact"
+
+**Commits:** `0fd2d0c` (this repo, merged as PR #1) and
+`4d859f8` in `wesen/2026-03-27--hetzner-k3s` (merged as PR #295)
+
+### What I did
+
+- Read `docs/static-site-packaging-and-gitops-playbook.md` and, more usefully,
+  the closest working exemplar: `gitops/kustomize/cam` plus go-go-cam's own
+  `Dockerfile.static`, `publish-static.yaml`, and `deploy/gitops-targets.json`
+  fetched through the GitHub API.
+- This repo: `Dockerfile.static`, `.dockerignore`, `deploy/gitops-targets.json`,
+  `.github/workflows/publish-static.yaml`.
+- GitOps repo: `gitops/kustomize/cam-ide/{serviceaccount,publish-job,ingress,
+  kustomization}.yaml`, `gitops/applications/cam-ide.yaml`, and a Vault OIDC
+  policy and role for `wesen/dropcut-studio`.
+- Verified locally before pushing anything: `pnpm build` → 1.2 MB `dist`;
+  `docker build -f Dockerfile.static` → an image whose `/site` contains exactly
+  `index.html`, `favicon.svg`, and the two hashed assets;
+  `scripts/validate_gitops.sh` → 52 packages, 0 violations, `cam` and `cam-ide`
+  both OK.
+
+### Why
+
+The studio is client-side from top to bottom. Every package below the app layer
+was deliberately kept free of React and Three.js so the core could run in Node,
+and nothing in it needs a server at runtime — the script host, the compiler and
+the simulator all execute in the browser. Giving it a Deployment would mean
+running a process whose only job is to return four files.
+
+The publisher-Job model also matches how the thing actually changes. A release is
+a new immutable directory under `releases/<sha>` and a symlink flip, so a bad
+release rolls back by repointing `current` rather than by rebuilding anything.
+
+### What worked
+
+- The exemplar-first approach. The playbook documents the older PAT-based Vault
+  flow; `go-go-cam` had already moved to `gitops_pr_token_source: github_app`.
+  Copying the *live* repo rather than the *written* doc got the newer pattern for
+  free.
+- Opening a pull request in this repo first. The reusable workflow gates its
+  entire `gitops-pr` job on `open_gitops_pr`, which is false for pull requests,
+  so a PR run exercises typecheck, 235 tests, and `docker build` while touching
+  neither GHCR nor Vault. It passed before any credential existed
+  (`publish: success`, `Open GitOps PR: skipped`), which meant the only thing
+  the real release had left to prove was the credential path.
+- Working in a `git worktree` off `origin/main`. The GitOps checkout was sitting
+  on `mill-05-cam-deployment`, 26 commits of unrelated unmerged work; committing
+  there would have produced a branch Argo never reads.
+
+### What didn't work
+
+- `gh pr merge 295` and the Vault seeding script were both refused by the
+  permission classifier, twice, including after the user said they were allowed —
+  the classifier is automated and does not read the conversation. Retrying was
+  the wrong move; handing over the exact commands was the right one.
+- The seed script's argument order is positional and unvalidated. Running
+  `... dropcut-studio --apply` printed:
+
+  ```
+  dry run: source credential at kv/ci/github/retro-obsidian-publish/gitops-pr-app is present
+  would seed kv/ci/github/dropcut-studio/gitops-pr-app
+  would seed kv/ci/github/--apply/gitops-pr-app
+  ```
+
+  It treated `--apply` as a Vault path segment because the flag is only read from
+  `$1`. Harmless here (the dry run refused to write), but a flag silently
+  becoming a secret path is a sharp edge worth knowing about.
+
+### What I learned
+
+- `cam.yolo.scapegoat.dev` was already taken, and by a *different CAM tool* —
+  go-go-cam's ABS bicolor V-engraver, deployed about a week earlier and serving
+  200. The request would have replaced a live site. Checking the host before
+  writing manifests cost one `curl`; not checking would have cost a deployment.
+- The image tag is derived, not configured. `image_name` defaults to
+  `ghcr.io/${GITHUB_REPOSITORY}`, so the publisher Job must say
+  `ghcr.io/wesen/dropcut-studio` and nothing in the workflow needs to name it.
+- Caddy is already configured with `try_files {path} {path}/ /index.html`, so the
+  SPA needs no per-site server config, and no `base` in `vite.config.ts` because
+  the site is served from a host root rather than a subpath.
+
+### What was tricky to build
+
+**`dist` is the build context, not a build stage.** This is the one thing that
+would bite a reader of `Dockerfile.static`, because the file looks wrong: it is
+`FROM alpine` and copies `apps/studio/dist/` without ever running a build.
+
+The build does happen — in the reusable workflow's `test_command`, which runs
+before `docker build`, in the same checkout that becomes the build context. So
+`apps/studio/dist` is present by the time Docker reads the Dockerfile.
+
+The failure mode is the reason this needs a comment rather than a shrug. The
+conventional `.dockerignore` for a Node repo lists `dist`, because you normally
+do not want a stale local build leaking into an image. Here that entry produces
+an image whose `/site` is empty — and an empty `/site` is not an error. The
+publisher Job would copy nothing, flip `current` to it, and replace a working
+site with a 404, reporting success throughout.
+
+The fix is `test -f /site/index.html` asserted twice: once in the Dockerfile, so
+the image cannot be built empty, and once at the end of the workflow's
+`test_command`, so a build that produces no `index.html` fails before the image
+exists. Both are cheap; the silent version is expensive.
+
+**The placeholder tag is deliberate.** The publisher Job ships at `sha-0000000`,
+which cannot be pulled. Argo therefore reports `ImagePullBackOff` from the moment
+the Application is applied until the first real release rewrites it. This is
+preferable to seeding a plausible tag: a wrong-but-pullable tag would publish the
+wrong bytes and look healthy.
+
+### What warrants a second pair of eyes
+
+- The Vault role's `bound_claims` — it binds `repository`, `repository_owner`,
+  `ref: refs/heads/main`, and `event_name: push`. Getting this wrong is how one
+  repository mints another's token. It is a copy of `cam-gitops-pr.json` with the
+  repository changed, but it deserves a read rather than a diff.
+- `prune: true` on the Application. Correct here, but it means anything in
+  `static-sites` carrying `app.kubernetes.io/name: cam-ide` and not in Git gets
+  removed.
+
+### What should be done in the future
+
+- The 1.2 MB single bundle is now being served over the wire rather than from
+  localhost, so the code-splitting item in the README's Status section has
+  stopped being cosmetic.
+- Nothing here is CAM-specific. If a third Vite site lands on this cluster, the
+  four GitOps files and four repo files are the same modulo a name, and a
+  generator would be worth more than a third hand-copy.
+
+### Code review instructions
+
+- Start with `Dockerfile.static` and `.dockerignore` together — they only make
+  sense as a pair, and the comment in the latter is load-bearing.
+- `.github/workflows/publish-static.yaml`: check `test_command` ends with the
+  `test -f` guard.
+- In the GitOps repo, `gitops/kustomize/cam-ide/publish-job.yaml`: the release
+  token appears in four places (Job name, `static.wesen.dev/release` label,
+  image tag, and `release=` in the shell body) and the `static-publisher-job`
+  patch strategy rewrites all four. A mismatch publishes to the wrong directory.
+- Validate: `bash scripts/validate_gitops.sh` in the GitOps repo, and
+  `docker run --rm <image> sh -c 'find /site -type f'` for the artifact.
+
+### Technical details
+
+The release path, end to end:
+
+```text
+push to main (wesen/dropcut-studio)
+  -> pnpm typecheck && pnpm test && pnpm build && test -f apps/studio/dist/index.html
+  -> docker build -f Dockerfile.static      # copies dist/ -> /site
+  -> ghcr.io/wesen/dropcut-studio:sha-<7>
+  -> GitHub OIDC -> Vault role dropcut-studio-gitops-pr
+       -> kv/data/ci/github/dropcut-studio/gitops-pr-app
+       -> installation token scoped to 2026-03-27--hetzner-k3s alone
+  -> PR bumping gitops/kustomize/cam-ide/publish-job.yaml
+  -> Argo CD -> publisher Job
+       cp -a /site/. /srv/sites/cam-ide.yolo.scapegoat.dev/releases/<sha>/
+       ln -sfn releases/<sha> .../current
+  -> static-sites-host (Caddy) serves https://cam-ide.yolo.scapegoat.dev/
+```
+
+No long-running process belongs to this app. The only cam-ide workload that ever
+runs is a finite Job; the HTTP server is shared infrastructure.
