@@ -1139,6 +1139,11 @@ current one intact"
 - GitOps repo: `gitops/kustomize/cam-ide/{serviceaccount,publish-job,ingress,
   kustomization}.yaml`, `gitops/applications/cam-ide.yaml`, and a Vault OIDC
   policy and role for `wesen/dropcut-studio`.
+- Recovered a wedged Argo sync caused by the placeholder tag (below), then
+  verified the live site in a browser: React mounted, WebGL canvas and
+  CodeMirror present, zero console errors, and the header reporting
+  `compiled 15,210 lines · cut 9843 mm · est 10:09` — the compiler running
+  client-side on the deployed bundle rather than merely the bytes being served.
 - Verified locally before pushing anything: `pnpm build` → 1.2 MB `dist`;
   `docker build -f Dockerfile.static` → an image whose `/site` contains exactly
   `index.html`, `favicon.svg`, and the two hashed assets;
@@ -1227,11 +1232,44 @@ the image cannot be built empty, and once at the end of the workflow's
 `test_command`, so a build that produces no `index.html` fails before the image
 exists. Both are cheap; the silent version is expensive.
 
-**The placeholder tag is deliberate.** The publisher Job ships at `sha-0000000`,
-which cannot be pulled. Argo therefore reports `ImagePullBackOff` from the moment
-the Application is applied until the first real release rewrites it. This is
-preferable to seeding a plausible tag: a wrong-but-pullable tag would publish the
-wrong bytes and look healthy.
+**The placeholder tag deadlocked the first sync.** The publisher Job ships at
+`sha-0000000`, which cannot be pulled. I expected Argo to report
+`ImagePullBackOff` until the first real release rewrote it, and reasoned that a
+loud failure beat a plausible-but-wrong tag. The first half was right and the
+second half was wrong about the consequence.
+
+What actually happened: applying the Application created the placeholder Job at
+sync-wave 1, and Argo then sat at
+
+```text
+Running | waiting for healthy state of batch/Job/publish-cam-ide-sha-0000000
+```
+
+for fourteen minutes. A Job whose pod is in `ImagePullBackOff` is neither healthy
+nor failed — the kubelet keeps retrying the pull, so `backoffLimit: 2` is never
+consumed and the Job never reaches a terminal state. Argo blocks on wave 1
+forever, which means the *real* Job at wave 1 and the Ingress at wave 2 were
+never created even after the release PR merged. `kubectl get ingress` returned
+nothing, and a hard refresh moved `status.sync.revision` to the merged commit
+without moving the sync itself.
+
+The recovery is two commands:
+
+```bash
+kubectl patch application cam-ide -n argocd --type merge -p '{"operation":null}'
+kubectl delete job publish-cam-ide-sha-0000000 -n static-sites
+```
+
+The first terminates the wedged operation; the second removes the object Argo is
+waiting on. The real Job started within a second of the delete, succeeded, and
+the Ingress and certificate followed 31 seconds later.
+
+The lesson is about the health model rather than about tags: an unpullable image
+is an *indefinite* state, not a failing one, and Argo's wave gating turns any
+indefinite wave-1 resource into a stalled application. The placeholder is still
+better than a plausible tag, but it is a bootstrap step with a required cleanup,
+not a self-healing one — and that cleanup should be written down next to the
+`kubectl apply` rather than discovered.
 
 ### What warrants a second pair of eyes
 
@@ -1286,3 +1324,19 @@ push to main (wesen/dropcut-studio)
 
 No long-running process belongs to this app. The only cam-ide workload that ever
 runs is a finite Job; the HTTP server is shared infrastructure.
+
+Final state, verified 2026-08-09:
+
+```text
+https://cam-ide.yolo.scapegoat.dev/   200, valid cert, 462 B index
+  /assets/index-B2mXxyr8.js           200, 1,233,876 B
+  /assets/index-D6g2ReSG.css          200, 8,284 B
+  /favicon.svg                        200, 328 B
+  /some/deep/route                    200  (Caddy try_files SPA fallback)
+
+Argo application cam-ide            Synced / Healthy
+Job publish-cam-ide-sha-c575317     1/1 succeeded
+Certificate cam-ide-tls             Ready
+
+https://cam.yolo.scapegoat.dev/     still "ABS Bicolor V-Engraver", untouched
+```
