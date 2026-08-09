@@ -2031,7 +2031,7 @@ $$z_c(s) = z_f + m s + \sqrt{r_p^2 - s^2}$$
 
 giving the stationary point
 
-$$s^\* = \frac{m\,r_p}{\sqrt{1 + m^2}},$$
+$$s^{*} = \frac{m\,r_p}{\sqrt{1 + m^2}},$$
 
 then clamping `s*` to the portion of the interval that lies within the edge's
 extent.
