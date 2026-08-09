@@ -1,0 +1,57 @@
+name: publish-static-site
+
+# Publishes DROPCUT Studio to https://cam-ide.yolo.scapegoat.dev/
+#
+# The shared reusable workflow runs the tests, builds the artifact image,
+# pushes it to ghcr.io/wesen/dropcut-studio:sha-<short>, then opens a PR
+# against the GitOps repo that bumps the publisher Job. Argo CD reconciles
+# the merged PR and the Job copies /site into the shared static-sites volume.
+#
+# Authentication is secretless: the job proves its identity to Vault over
+# GitHub OIDC, reads the GitOps PR GitHub App credential, and mints an
+# installation token scoped to the GitOps repo alone.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  pull-requests: write
+  id-token: write
+
+concurrency:
+  group: publish-static-site-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    uses: go-go-golems/infra-tooling/.github/workflows/publish-ghcr-image.yml@main
+    secrets: inherit
+    with:
+      dockerfile: ./Dockerfile.static
+      build_context: .
+      setup_go: false
+      # Also produces apps/studio/dist, which Dockerfile.static copies. The
+      # final `test -f` is the guard against a build that "succeeds" empty.
+      test_command: >-
+        corepack enable
+        && pnpm install --frozen-lockfile
+        && pnpm typecheck
+        && pnpm test
+        && pnpm --filter @studio/app build
+        && test -f apps/studio/dist/index.html
+      gitops_target_config: deploy/gitops-targets.json
+      push_image: ${{ github.event_name != 'pull_request' }}
+      open_gitops_pr: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+      gitops_pr_token_source: github_app
+      vault_role: dropcut-studio-gitops-pr
+      gitops_app_secret_path: kv/data/ci/github/dropcut-studio/gitops-pr-app
+      gitops_app_owner: wesen
+      gitops_app_repositories: 2026-03-27--hetzner-k3s
+      tooling_repository: go-go-golems/infra-tooling
+      tooling_ref: main

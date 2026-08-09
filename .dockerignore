@@ -1,0 +1,12 @@
+.git
+.github
+node_modules
+**/node_modules
+ttmp
+original
+docs
+**/.DS_Store
+
+# NOTE: apps/studio/dist is deliberately NOT ignored. It is the payload —
+# CI builds it before `docker build`, and excluding it would produce an
+# image whose /site is empty.
