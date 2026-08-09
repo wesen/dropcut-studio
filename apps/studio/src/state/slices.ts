@@ -45,6 +45,19 @@ export interface ProjectState {
   readonly diskFileName: string | null;
   readonly saving: boolean;
   readonly lastError: string | null;
+
+  /**
+   * Incremented whenever the script is replaced from OUTSIDE the editor —
+   * opening a document, starting a new one, importing.
+   *
+   * The editor owns its document, so it cannot simply re-render when the store
+   * changes. It needs to know the difference between "the user typed, and the
+   * store is echoing that back" and "something replaced the whole program".
+   * A counter says that unambiguously; comparing text cannot, because loading a
+   * document whose text happens to match would be indistinguishable from a
+   * no-op, and reloading the SAME document should still reset undo history.
+   */
+  readonly loadGeneration: number;
 }
 
 const projectSlice = createSlice({
@@ -60,6 +73,7 @@ const projectSlice = createSlice({
     diskFileName: null,
     saving: false,
     lastError: null,
+    loadGeneration: 0,
   } as ProjectState,
   reducers: {
     scriptChanged: (s, a: PayloadAction<string>) => { s.script = a.payload; },
@@ -79,6 +93,7 @@ const projectSlice = createSlice({
       s.savedSettings = settingsOf(d);
       s.diskFileName = a.payload.diskFileName ?? null;
       s.lastError = null;
+      s.loadGeneration += 1;
     },
 
     /** Mark the current buffer as persisted. */
@@ -99,6 +114,7 @@ const projectSlice = createSlice({
       s.savedSettings = null;
       s.diskFileName = null;
       s.lastError = null;
+      s.loadGeneration += 1;
     },
 
     savingStarted: (s) => { s.saving = true; s.lastError = null; },

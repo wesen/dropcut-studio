@@ -65,6 +65,7 @@ export function createStore() {
         diskFileName: null,
         saving: false,
         lastError: null,
+        loadGeneration: 0,
       },
     },
     middleware: (getDefault) =>

@@ -5,9 +5,15 @@
  * competing worker architecture to fight with ours (ADR-007). Its cost is no
  * in-editor type checking, which the small DSL surface does not really need.
  *
+ * OWNERSHIP. CodeMirror owns the document while the user is typing, and the
+ * store owns it when something else replaces it — opening a project, starting a
+ * new one, importing a file. Those two directions need different mechanisms:
+ * typing flows OUT through an update listener, and a document load flows IN by
+ * replacing the editor state. Getting only the first direction working is easy
+ * and produces an editor that silently ignores every project you open.
+ *
  * Two things must NOT go through React state:
- *  - the document, on every keystroke (CodeMirror owns it; we sync outward on a
- *    debounce via the store's auto-compile middleware)
+ *  - the document, on every keystroke
  *  - the playback line highlight, which changes many times a second
  *
  * Design doc: Part VII.4.
@@ -16,6 +22,7 @@
 import { useEffect, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { EditorState, StateEffect, StateField } from "@codemirror/state";
+import type { Extension } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from "@codemirror/view";
 import { Decoration } from "@codemirror/view";
 import type { DecorationSet } from "@codemirror/view";
@@ -66,12 +73,14 @@ export function Editor() {
   const viewRef = useRef<EditorView | null>(null);
   const dispatch = useDispatch<AppDispatch>();
 
-  const initialScript = useSelector((s: RootState) => s.project.script);
+  const script = useSelector((s: RootState) => s.project.script);
+  const loadGeneration = useSelector((s: RootState) => s.project.loadGeneration);
   const diagnostics = useSelector((s: RootState) => s.compile.diagnostics);
 
-  // Keep the latest script in a ref so the mount effect never re-runs.
-  const scriptRef = useRef(initialScript);
-  scriptRef.current = initialScript;
+  // Read at mount only. Subsequent changes arrive through the sync effects
+  // below, which is the part that is easy to forget.
+  const scriptRef = useRef(script);
+  scriptRef.current = script;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -79,27 +88,7 @@ export function Editor() {
 
     const view = new EditorView({
       parent: host,
-      state: EditorState.create({
-        doc: scriptRef.current,
-        extensions: [
-          lineNumbers(),
-          history(),
-          highlightActiveLine(),
-          keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
-          javascript(),
-          lintGutter(),
-          activeLineField,
-          oneDark,
-          EditorView.theme({
-            "&": { height: "100%", fontSize: "12.5px" },
-            ".cm-scroller": { fontFamily: "var(--mono)", lineHeight: "1.6" },
-            ".cm-activeMachiningLine": { backgroundColor: "rgba(255, 177, 0, 0.12)" },
-          }),
-          EditorView.updateListener.of((u) => {
-            if (u.docChanged) dispatch(scriptChanged(u.state.doc.toString()));
-          }),
-        ],
-      }),
+      state: makeState(scriptRef.current, dispatch),
     });
     viewRef.current = view;
     registerEditorView(view);
@@ -111,6 +100,43 @@ export function Editor() {
     };
   }, [dispatch]);
 
+  /**
+   * A document was loaded from outside: replace the editor state wholesale.
+   *
+   * `setState` rather than a change transaction, because it also discards undo
+   * history. With a plain transaction, Ctrl-Z immediately after opening a
+   * project would undo backwards into the PREVIOUS project's text — the editor
+   * would appear to corrupt the file you just opened.
+   *
+   * Guarded on `loadGeneration` rather than on the text, so that reopening the
+   * same document still resets history, and so a load whose text coincidentally
+   * matches is not mistaken for a no-op.
+   */
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    if (loadGeneration === 0) return;   // nothing loaded yet; mount handled it
+    view.setState(makeState(scriptRef.current, dispatch));
+  }, [loadGeneration, dispatch]);
+
+  /**
+   * Safety net: keep the document in step with the store.
+   *
+   * Normally a no-op, because the store's script IS what the user typed. It
+   * catches any future path that mutates the script without bumping the load
+   * generation, so such a change degrades to "cursor jumps" rather than "the
+   * editor silently shows the wrong program".
+   */
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const current = view.state.doc.toString();
+    if (current === script) return;
+    view.dispatch({
+      changes: { from: 0, to: current.length, insert: script },
+    });
+  }, [script]);
+
   // Push compiler diagnostics into the gutter and as squiggles.
   useEffect(() => {
     const view = viewRef.current;
@@ -120,6 +146,31 @@ export function Editor() {
 
   return <div ref={hostRef} className="editor" />;
 }
+
+/** The extension set, shared by mount and by document loads. */
+function extensions(dispatch: AppDispatch): Extension[] {
+  return [
+    lineNumbers(),
+    history(),
+    highlightActiveLine(),
+    keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+    javascript(),
+    lintGutter(),
+    activeLineField,
+    oneDark,
+    EditorView.theme({
+      "&": { height: "100%", fontSize: "12.5px" },
+      ".cm-scroller": { fontFamily: "var(--mono)", lineHeight: "1.6" },
+      ".cm-activeMachiningLine": { backgroundColor: "rgba(255, 177, 0, 0.12)" },
+    }),
+    EditorView.updateListener.of((u) => {
+      if (u.docChanged) dispatch(scriptChanged(u.state.doc.toString()));
+    }),
+  ];
+}
+
+const makeState = (doc: string, dispatch: AppDispatch): EditorState =>
+  EditorState.create({ doc, extensions: extensions(dispatch) });
 
 /**
  * Map compiler diagnostics onto editor ranges.

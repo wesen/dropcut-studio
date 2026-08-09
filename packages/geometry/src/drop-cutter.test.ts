@@ -189,12 +189,17 @@ describe("performance", () => {
    * unmeasured estimate and is not achievable at that density — a 6 mm tool on a
    * 50 tri/mm^2 mesh has ~1,400 triangles under it on every single query.
    *
-   * These are REGRESSION GUARDS, not benchmarks. Observed standalone throughput
-   * is ~78k/s typical and ~37k/s dense; the thresholds sit roughly 3x below that
-   * because vitest runs files in parallel workers and a loaded machine easily
-   * halves the measured rate. They are still tight enough to catch the kind of
-   * regression that actually matters: the first working version of this kernel
-   * managed 3,197/s, which these would have caught immediately.
+   * These are REGRESSION GUARDS, not benchmarks, and they are deliberately
+   * loose. Observed standalone throughput is ~78k/s typical and ~37k/s dense,
+   * but vitest runs test files in parallel workers, so the measured rate on a
+   * loaded machine is a fraction of that and varies with how many other files
+   * happen to be running. An earlier threshold set at 3x below the standalone
+   * figure still flaked once the suite grew.
+   *
+   * The number worth reading is the one logged below. The assertion exists only
+   * to catch an ORDER-OF-MAGNITUDE regression — the first working version of
+   * this kernel managed 3,197/s, and these bounds catch that with room to spare
+   * without failing because CI was busy.
    */
   function throughput(mesh: ReturnType<typeof tessellate>, diameter: number, N: number) {
     const evalZ = makeCutterLocation(mesh, BALL(diameter), { floorZ: 0 });
@@ -221,7 +226,7 @@ describe("performance", () => {
     const qps = throughput(mesh, 6, 40_000);
     console.log(`  drop-cutter: ${Math.round(qps).toLocaleString()} q/s on ` +
       `${mesh.triangleCount.toLocaleString()} tri (typical density)`);
-    expect(qps).toBeGreaterThan(25_000);
+    expect(qps).toBeGreaterThan(10_000);
   });
 
   it("handles a deliberately dense mesh", () => {
@@ -231,7 +236,7 @@ describe("performance", () => {
     const qps = throughput(mesh, 6, 20_000);
     console.log(`  drop-cutter: ${Math.round(qps).toLocaleString()} q/s on ` +
       `${mesh.triangleCount.toLocaleString()} tri (dense)`);
-    expect(qps).toBeGreaterThan(12_000);
+    expect(qps).toBeGreaterThan(6_000);
   });
 
   it("builds the spatial index quickly", () => {

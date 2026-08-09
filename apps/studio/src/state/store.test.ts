@@ -13,6 +13,9 @@ import { artifactCount, clearArtifacts, getArtifact } from "./artifactCache.js";
 import { compile } from "./compileThunk.js";
 import { createStore } from "./store.js";
 import { machineChanged, scriptChanged } from "./slices.js";
+import { documentOpened } from "./slices.js";
+import { createDocument } from "./projectFile.js";
+import { newProject, saveProject } from "./projectThunks.js";
 
 /** Walk a value looking for anything that must not be in a Redux store. */
 function findForbidden(value: unknown, path = "state", seen = new Set<unknown>()): string | null {
@@ -134,5 +137,54 @@ describe("store", () => {
     expect(byLabel.get("gouge")!.status).toBe("resolution");
     expect(byLabel.get("fixture collision")!.status).toBe("skipped");
     expect(store.getState().compile.errorBudgetMm).toBeGreaterThan(0);
+  });
+});
+
+describe("load generation", () => {
+  /**
+   * The editor owns its document, so it cannot re-render when the store
+   * changes. It needs an unambiguous signal that the program was replaced from
+   * outside. Without this the editor silently keeps showing the previous
+   * project — which is exactly the bug this counter was added to fix.
+   */
+  it("increments when a document is opened, but not when the user types", () => {
+    // Exercised through the action rather than a save/open round trip: there is
+    // no IndexedDB under Node, and the counter's contract is about the ACTION,
+    // not about which storage backend produced the document.
+    const store = createStore();
+    const before = store.getState().project.loadGeneration;
+
+    store.dispatch(scriptChanged("// typing"));
+    expect(store.getState().project.loadGeneration).toBe(before);
+
+    store.dispatch(documentOpened({ document: createDocument({
+      name: "other", script: "// a different program",
+      machineId: "linuxcnc", simulate: true, simulationResolution: 140,
+    }) }));
+
+    expect(store.getState().project.loadGeneration).toBe(before + 1);
+    expect(store.getState().project.script).toBe("// a different program");
+  });
+
+  it("increments for a new project, even when the text is identical", async () => {
+    const store = createStore();
+    const first = store.getState().project.loadGeneration;
+    await store.dispatch(newProject({ exampleName: "pocket-and-face" }));
+    const second = store.getState().project.loadGeneration;
+    expect(second).toBeGreaterThan(first);
+
+    // Loading the SAME example again must still bump: the editor has to reset
+    // its undo history either way.
+    await store.dispatch(newProject({ exampleName: "pocket-and-face" }));
+    expect(store.getState().project.loadGeneration).toBeGreaterThan(second);
+  });
+
+  it("does not increment on save", async () => {
+    const store = createStore();
+    store.dispatch(scriptChanged(POCKET));
+    await store.dispatch(compile());
+    const before = store.getState().project.loadGeneration;
+    await store.dispatch(saveProject());
+    expect(store.getState().project.loadGeneration).toBe(before);
   });
 });
