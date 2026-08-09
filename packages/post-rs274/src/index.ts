@@ -50,6 +50,15 @@ export interface EmittedMotion {
   readonly feed: number;
   readonly seconds: number;
   readonly gcodeLine: number;
+  /**
+   * T-number in effect for this motion.
+   *
+   * Downstream simulation needs to know which cutter was in the spindle, and
+   * reconstructing that by re-walking the command stream in parallel is both
+   * fiddly and easy to get subtly wrong. The emitter already tracks it, so it
+   * publishes it.
+   */
+  readonly toolNumber: number | null;
   readonly provenance: Provenance;
 }
 
@@ -74,6 +83,7 @@ export function emitRs274(
   let cur: Vec3 = vec3(0, 0, program.setup.clearance);
   let seconds = 0;
   let lastOperationId: string | null = null;
+  let activeToolNumber: number | null = null;
 
   const push = (b: GCodeBlock) => blocks.push(b);
 
@@ -113,6 +123,7 @@ export function emitRs274(
       feed: mode === "G0" ? machine.rapidRate : feed,
       seconds: dt,
       gcodeLine: blocks.length - 1,
+      toolNumber: activeToolNumber,
       provenance: prov,
     });
     seconds += dt;
@@ -161,7 +172,7 @@ export function emitRs274(
 
     motions.push({
       kind: "cut", from: cur, to, feed, seconds: dt,
-      gcodeLine: blocks.length - 1, provenance: prov,
+      gcodeLine: blocks.length - 1, toolNumber: activeToolNumber, provenance: prov,
     });
     seconds += dt;
     cur = to;
@@ -194,6 +205,7 @@ export function emitRs274(
         break;
 
       case "tool-change":
+        activeToolNumber = cmd.tool.number;
         push({ tool: cmd.tool.number, misc: ["M6"], provenance: cmd.provenance });
         break;
 

@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 const pkgs = [
   "units", "math", "ir", "machine", "geometry",
   "strategies", "planner", "analysis", "compiler",
-  "gcode-parser", "post-rs274", "post-makera",
+  "gcode-parser", "post-rs274", "post-makera", "script-host",
 ];
 
 export default defineConfig({

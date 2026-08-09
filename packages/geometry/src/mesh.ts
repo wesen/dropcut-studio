@@ -146,6 +146,24 @@ export function toBinaryStl(mesh: Mesh): ArrayBuffer {
   return buf;
 }
 
+/**
+ * Translate a mesh into a different frame position.
+ *
+ * Used to place a part inside the machine's work envelope: the built-in presets
+ * are centred on the origin, and a machine whose travel starts at zero cannot
+ * reach them there.
+ */
+export function translateMesh(mesh: Mesh, dx: number, dy: number, dz: number): Mesh {
+  if (dx === 0 && dy === 0 && dz === 0) return mesh;
+  const out = new Float64Array(mesh.tris.length);
+  for (let i = 0; i < mesh.tris.length; i += 3) {
+    out[i] = mesh.tris[i] + dx;
+    out[i + 1] = mesh.tris[i + 1] + dy;
+    out[i + 2] = mesh.tris[i + 2] + dz;
+  }
+  return meshFromTriangles(out, mesh.name);
+}
+
 export function triangleNormal(tris: Float64Array, offset: number): Vec3 {
   const ax = tris[offset], ay = tris[offset + 1], az = tris[offset + 2];
   const bx = tris[offset + 3], by = tris[offset + 4], bz = tris[offset + 5];

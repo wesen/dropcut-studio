@@ -52,6 +52,9 @@
       ],
       "@cam/post-makera": [
         "packages/post-makera/src/index.ts"
+      ],
+      "@cam/script-host": [
+        "packages/script-host/src/index.ts"
       ]
     }
   }

@@ -21,8 +21,53 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.20.1)
 
+  apps/cli:
+    dependencies:
+      '@cam/analysis':
+        specifier: workspace:*
+        version: link:../../packages/analysis
+      '@cam/compiler':
+        specifier: workspace:*
+        version: link:../../packages/compiler
+      '@cam/gcode-parser':
+        specifier: workspace:*
+        version: link:../../packages/gcode-parser
+      '@cam/geometry':
+        specifier: workspace:*
+        version: link:../../packages/geometry
+      '@cam/ir':
+        specifier: workspace:*
+        version: link:../../packages/ir
+      '@cam/machine':
+        specifier: workspace:*
+        version: link:../../packages/machine
+      '@cam/math':
+        specifier: workspace:*
+        version: link:../../packages/math
+      '@cam/planner':
+        specifier: workspace:*
+        version: link:../../packages/planner
+      '@cam/post-makera':
+        specifier: workspace:*
+        version: link:../../packages/post-makera
+      '@cam/post-rs274':
+        specifier: workspace:*
+        version: link:../../packages/post-rs274
+      '@cam/script-host':
+        specifier: workspace:*
+        version: link:../../packages/script-host
+      '@cam/strategies':
+        specifier: workspace:*
+        version: link:../../packages/strategies
+      '@cam/units':
+        specifier: workspace:*
+        version: link:../../packages/units
+
   packages/analysis:
     dependencies:
+      '@cam/compiler':
+        specifier: workspace:*
+        version: link:../compiler
       '@cam/geometry':
         specifier: workspace:*
         version: link:../geometry
@@ -35,6 +80,15 @@ importers:
       '@cam/math':
         specifier: workspace:*
         version: link:../math
+      '@cam/planner':
+        specifier: workspace:*
+        version: link:../planner
+      '@cam/post-rs274':
+        specifier: workspace:*
+        version: link:../post-rs274
+      '@cam/strategies':
+        specifier: workspace:*
+        version: link:../strategies
       '@cam/units':
         specifier: workspace:*
         version: link:../units
@@ -113,9 +167,6 @@ importers:
       '@cam/math':
         specifier: workspace:*
         version: link:../math
-      '@cam/strategies':
-        specifier: workspace:*
-        version: link:../strategies
       '@cam/units':
         specifier: workspace:*
         version: link:../units
@@ -125,6 +176,9 @@ importers:
       '@cam/compiler':
         specifier: workspace:*
         version: link:../compiler
+      '@cam/gcode-parser':
+        specifier: workspace:*
+        version: link:../gcode-parser
       '@cam/ir':
         specifier: workspace:*
         version: link:../ir
@@ -134,6 +188,9 @@ importers:
       '@cam/math':
         specifier: workspace:*
         version: link:../math
+      '@cam/post-rs274':
+        specifier: workspace:*
+        version: link:../post-rs274
       '@cam/units':
         specifier: workspace:*
         version: link:../units
@@ -156,7 +213,7 @@ importers:
         specifier: workspace:*
         version: link:../units
 
-  packages/strategies:
+  packages/script-host:
     dependencies:
       '@cam/geometry':
         specifier: workspace:*
@@ -170,6 +227,39 @@ importers:
       '@cam/math':
         specifier: workspace:*
         version: link:../math
+      '@cam/planner':
+        specifier: workspace:*
+        version: link:../planner
+      '@cam/units':
+        specifier: workspace:*
+        version: link:../units
+
+  packages/strategies:
+    dependencies:
+      '@cam/compiler':
+        specifier: workspace:*
+        version: link:../compiler
+      '@cam/gcode-parser':
+        specifier: workspace:*
+        version: link:../gcode-parser
+      '@cam/geometry':
+        specifier: workspace:*
+        version: link:../geometry
+      '@cam/ir':
+        specifier: workspace:*
+        version: link:../ir
+      '@cam/machine':
+        specifier: workspace:*
+        version: link:../machine
+      '@cam/math':
+        specifier: workspace:*
+        version: link:../math
+      '@cam/planner':
+        specifier: workspace:*
+        version: link:../planner
+      '@cam/post-rs274':
+        specifier: workspace:*
+        version: link:../post-rs274
       '@cam/units':
         specifier: workspace:*
         version: link:../units

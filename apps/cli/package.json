@@ -1,0 +1,22 @@
+{
+  "name": "@studio/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": { "dropcut": "./src/main.ts" },
+  "dependencies": {
+    "@cam/units": "workspace:*",
+    "@cam/math": "workspace:*",
+    "@cam/ir": "workspace:*",
+    "@cam/machine": "workspace:*",
+    "@cam/geometry": "workspace:*",
+    "@cam/planner": "workspace:*",
+    "@cam/strategies": "workspace:*",
+    "@cam/analysis": "workspace:*",
+    "@cam/compiler": "workspace:*",
+    "@cam/gcode-parser": "workspace:*",
+    "@cam/post-rs274": "workspace:*",
+    "@cam/post-makera": "workspace:*",
+    "@cam/script-host": "workspace:*"
+  }
+}
