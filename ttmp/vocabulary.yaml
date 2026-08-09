@@ -5,6 +5,20 @@ topics:
       description: Backend services
     - slug: websocket
       description: WebSocket lifecycle & events
+    - slug: cam
+      description: 'Computer-aided manufacturing: toolpath generation, machining strategies'
+    - slug: gcode
+      description: RS-274 G-code generation, parsing and postprocessing
+    - slug: react
+      description: React component architecture and hooks
+    - slug: redux
+      description: Redux Toolkit state management, slices, selectors, middleware
+    - slug: vite
+      description: Vite build tooling, dev server, workers
+    - slug: ide
+      description: In-app code editor, compiler diagnostics, scripting host
+    - slug: toolpath
+      description: Toolpath strategies, drop-cutter, waterline, scallop, verification
 docTypes:
     - slug: design-doc
       description: Structured rationale and architecture notes
