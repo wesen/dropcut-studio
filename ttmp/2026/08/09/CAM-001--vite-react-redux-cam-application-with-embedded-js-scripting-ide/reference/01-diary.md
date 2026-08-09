@@ -613,3 +613,295 @@ index.md                                  overview, document table, ADR summary
 ```
 
 reMarkable: `/ai/2026/08/09/CAM-001/CAM-001 DROPCUT Studio Architecture Guide.pdf`
+
+---
+
+## Step 5: Implement the headless core — M1, M2, M4, M5, M7
+
+The user said "implement it", and separately that the prototypes are reference
+sketches rather than code to port. That second remark changed the shape of the
+work considerably: instead of golden-file parity against the prototypes, every
+algorithm could be written cleanly and tested against **closed-form ground
+truth**. That turned out to be worth far more than parity would have been,
+because it catches errors the prototypes might also have had — and because a
+test that says "a hemisphere of radius R0 machined with a ball of radius R has a
+cutter-location surface that is a hemisphere of radius R0+R" is a statement about
+machining, not about a previous implementation.
+
+The build order followed the design doc's milestones but skipped the two UI ones
+(M3 viewport, M6 React shell) in favour of finishing the headless pipeline first.
+That ordering was deliberate and is the one the design doc recommends for a
+single developer: with a CLI, every algorithm is testable in Node from day one,
+and the UI later becomes assembly rather than debugging through a canvas.
+
+### Prompt Context
+
+**User prompt (verbatim):** "Implement it. Keep a detailed diary as you go, print work slips after significant tasks, commit at appropriate intervals."
+
+Followed mid-turn by: "you don't need to port the exact code, it's prototype reference sketches"
+
+**Assistant interpretation:** Build the system the design doc specifies, writing
+fresh implementations guided by the prototypes' algorithms rather than
+transliterating them. Keep the diary current, print a thermal work slip after
+each milestone, and commit per milestone.
+
+**Inferred user intent:** A working codebase, not a port. The prototypes are
+there to explain what the algorithms are; the quality bar is the design doc.
+
+**Commits:** `c3af382` (M1) · `239c28b` (M2) · `af1caea` (M4) · `4c780ec` (M5) ·
+`97d7c64` (M7)
+
+### What I did
+
+Fourteen packages, 64 TypeScript files, ~11,100 lines, 191 tests.
+
+- **M1 — core and the round trip.** `@cam/units` (branded scalars, inch
+  normalised to mm at construction), `@cam/math` (Vec3/Box, frame-tagged
+  `Point3`, SE(3) `Transform`), `@cam/ir` (Path as a category, non-modal
+  `CanonicalCommand`, `Provenance`/`Diagnostic`, the `ValidatedProgram` brand),
+  `@cam/machine` (capabilities as data, three profiles), `@cam/compiler`
+  (`GCodeBlock`, the single modal `compress()`, capability-driven `lower()`,
+  `validate()` as sole gate), `@cam/gcode-parser`, `@cam/post-rs274`,
+  `@cam/post-makera`.
+- **M2 — geometry.** Mesh/STL, spatial index, drop-cutter evaluator, CL field,
+  marching squares, Eikonal fast sweeping.
+- **M4 — strategies and planner.** Raster, constant-scallop, hybrid-waterline,
+  z-level rough, face, rect pocket, drill; entry planning, link decisions, path
+  ordering, adaptive refinement, and the runner that composes them.
+- **M5 — analysis.** One dexel simulator with batch and incremental modes,
+  deviation analysis, sampled safety checks, error budgets, safety certificates,
+  time estimation, and `recertify()`.
+- **M7 — scripting.** The capability API, the sandbox, three worked examples,
+  and a CLI (`compile`, `check`, `example`, `examples`, `machines`).
+
+### Why
+
+The design doc's central bet is that machining, not G-code, should be the
+semantic model. The only way to know whether that bet pays is to build enough of
+the stack that a real program flows through every layer. It does: a JavaScript
+script now produces validated, simulated, machine-specific G-code with a printed
+safety certificate, and the same canonical program compiled for two machines
+differs exactly where their capabilities differ.
+
+### What worked
+
+**The round-trip property test justified the whole architecture on day one.**
+`parse(emit(P))` recovering the same motion as the uncompressed blocks, over 400
+generated programs on three machine profiles, is the evidence that a non-modal IR
+can be compressed to modal G-code losslessly. Without a parser we would have had
+to take that on faith.
+
+**Analytic ground truth found real bugs that parity would have hidden.** The
+hemisphere identity, the 45-degree ramp offset `R(sqrt(2)-1)`, the vee-groove
+depth, cone contours as circles of radius `R0(1-L/H)` — each is a statement about
+geometry that a wrong implementation cannot accidentally satisfy.
+
+**Capability-driven lowering worked exactly as advertised.** Compiling one
+program for LinuxCNC and for the Makera produces arcs in one and linearized
+polylines in the other, `M30` versus `M02`, with a structured `;@MKR|` header on
+one side only — and there is not a single `if (machine === ...)` in the compiler.
+
+**The simulator earned its place immediately.** See below.
+
+### What didn't work
+
+**The drop-cutter was 60x slower than the design doc's estimate.** First
+measurement: 3,197 queries/s against a claimed budget of 200,000. The estimate
+was mine, written in the design doc and flagged there as unmeasured (risk R2),
+and it was simply wrong: a 6 mm tool over a 50 tri/mm² mesh has ~1,400 triangles
+under it on *every* query, so that throughput is not reachable at that density.
+
+Two fixes took it to ~78,000 q/s at typical density:
+
+- **Distance-aware pruning.** The obvious bound is "geometry topping out at
+  `maxZ` can lift the sphere centre to at most `maxZ + R`". That is far too
+  loose. Using the horizontal distance `d` to the candidate's bounding box gives
+  `maxZ + sqrt(R² − d²)`, which rejects rim geometry almost immediately once the
+  centre of the disc has set a good running best. This alone was most of the win.
+- **Nearest-first cell traversal.** Walking cells in Chebyshev rings outward from
+  the query point means the contact is usually found in the very first cell, so
+  the running best is tight before the outer rings are considered. Row-major
+  order examined hundreds of irrelevant triangles first.
+
+Plain `maxZ + R` pruning on its own bought only 1.35x, which is the sort of
+result that would have been easy to accept as "well, that's the cost" without
+measuring what the bound was actually rejecting.
+
+**A LaTeX escape broke the earlier reMarkable upload** (recorded in Step 4) and,
+in this step, **a backtick inside a template literal** broke the build: I wrote
+`` `at` `` in a comment inside an example's backtick-quoted source string, which
+terminated the string. esbuild's message (`Expected "}" but found "at"`) points
+at the consequence rather than the cause.
+
+**Two bugs in my own new code**, both caught by tests rather than review:
+
+```
+expected null to be 'dome'
+```
+
+`runScript` destructured the API host with `const { api, harvest, ...rest }`,
+which evaluated the `meshName` **getter at spread time** — before the script had
+run. Always null. Fixed by keeping the host object and reading the property after
+execution.
+
+```
+expected 4 to be 3
+```
+
+The script-line offset probe measured *body* lines rather than *user* lines, so
+every reported error location was off by one. Now measured at load time by
+throwing from a known user line, because a hard-coded constant silently
+misreports every error and an engine change would go unnoticed.
+
+### What I learned
+
+**The simulator is not a nicety; it is the only thing that finds link bugs.**
+Running it over a real finishing compile reported a rapid ploughing through
+12.9 mm of stock. Two genuine planner defects, neither visible by reading:
+
+1. **Retract heights were computed from the part surface.** On a finishing-only
+   job the material above the part has never been removed, so a locally-optimal
+   retract at 2.6 mm rapids straight through 12.4 mm of untouched block. The
+   "local safe height" optimisation is only valid *after roughing has cleared the
+   region*, and the planner had no way to know that. Retracts are now floored at
+   the stock top; doing better needs in-planner stock tracking.
+2. **A retract traverse ended at cutting depth**, so its final descent was a
+   rapid going down into material. Traverses now end at the safe height and the
+   entry planner owns the descent under feed control. This also removed a double
+   descent — traverse down, then entry descending again from clearance.
+
+Residual after both fixes: zero.
+
+**A missing capability surfaced only under the "every example on every machine"
+test.** The dome preset is modelled centred on its own origin, and nothing in the
+pipeline mapped a part into the work envelope, so it could not be machined on any
+profile whose travel starts at zero. `geometry.mesh(name, { at })` now exists,
+which is exactly what a machinist does when deciding where on the bed to clamp.
+That requirement had not appeared in the design doc at all.
+
+**Validation being strict is a feature that keeps embarrassing the fixtures.**
+Three separate test failures in this step were the validator being *right*:
+facing overshoots one tool radius past the stock edge (so a stock clamped at
+exactly X0 fails on a machine whose travel starts at 0); 14,000 rpm exceeds the
+Makera's 13,000 limit; a part centred on the origin needs negative travel. Each
+time the correct fix was to the fixture, not the check.
+
+### What was tricky to build
+
+**Making frame tagging actually error.** The whole point of `Point3<"work">` vs
+`Point3<"machine">` is that mixing them fails to compile. My first version did
+not: TypeScript inferred the frame parameter from *both* arguments and happily
+widened to a union, so passing a part-frame point to a work-frame transform
+type-checked. The `@ts-expect-error` in the test flagged this by reporting
+"unused directive" — the test caught the *type system* being wrong, which is a
+pleasing thing for a test to do. `NoInfer<A>` on the point parameter fixes it.
+
+**Marching squares emitting degenerate segments.** Contour extraction on a cone
+returned three polylines where one was expected. The main loop was perfect (835
+points, length 65.973 against the analytic 2π·10.5 = 65.973); the extras were
+two-point "loops" of coincident points. Cause: when a grid node's value lands
+*exactly* on the contour level — which happens at r = 10.5 precisely, on a cone
+sampled at 0.1 mm — the edge interpolation puts the crossing exactly on that
+corner, and two of the cell's edges then produce the same point. Zero-length
+segments are now discarded at emission.
+
+**`splitByMask` cutting closed loops at the array seam.** A run that survives the
+mask and happens to wrap around index 0 came back as two runs, which would make
+the planner lift the tool in the middle of a perfectly continuous pass. Found by
+writing the test as "keep x > 0 on a circle starting at angle 0", which is
+exactly the wrapping case. Runs that touch both ends of a closed loop are now
+merged.
+
+**Deciding where modality is allowed to live.** The temptation is to let the
+emitter track modal state as it goes, because that is the natural way to write
+it. Keeping emission fully explicit and putting compression in a separate pass
+costs an extra traversal and is unambiguously right: it makes the round-trip test
+meaningful (there is a pre-compression ground truth to compare against), and it
+means exactly one function in the codebase has to be correct about modality.
+
+### What warrants a second pair of eyes
+
+- **The stock-top retract clamp is conservative, not optimal.** Every retract now
+  goes to the stock top even when roughing has cleared the region, which costs
+  travel time. The right fix is stock tracking during planning. Someone should
+  confirm the conservative behaviour is acceptable for now.
+- **The stay-down decision has the same blind spot as the retract bug had.** It
+  checks the part surface, not remaining stock. The risk is bounded — it is a
+  feed-rate move over at most a few stepovers, and the adjacent region was just
+  machined — but the reasoning is a judgement, not a proof.
+- **The bull-nose drop-cutter is an approximation**, documented as such: it takes
+  the max of a flat disc of the full radius and a ball of the corner radius,
+  which is conservative (never gouges) but not exact. Exact toroidal contact is a
+  follow-up.
+- **V-bit drop-cutter approximates the cone with a flat disc of the tip
+  diameter.** Fine for engraving at shallow depth, wrong for deep V-carving.
+- **Time estimates ignore acceleration** and can be ~2x optimistic on finishing
+  passes with many short segments. The model is labelled in the return value so
+  the UI can qualify it.
+
+### What should be done in the future
+
+- M3 (viewport) and M6 (React shell) remain. The headless core is complete and
+  the CLI proves it, so those are now assembly.
+- Stock-aware link planning, which would recover the travel time the conservative
+  retract clamp currently costs.
+- Arc *fitting* (polyline → arcs) is specified in the design doc but not built;
+  only arc *lowering* (arcs → polylines, when a machine cannot express them)
+  exists. Fitting is a pure optimisation and nothing depends on it yet.
+- Worker execution. Everything is synchronous and cancellation is a polled
+  boolean, which is worker-ready by design but not yet wired to one.
+
+### Code review instructions
+
+- Start at `apps/cli/src/compile.ts` — it is the whole pipeline in 170 lines and
+  shows how the layers compose.
+- Then `packages/geometry/src/drop-cutter.ts`, the hot kernel, and its test,
+  which is where the analytic ground truth lives.
+- Then `packages/planner/src/linker.ts`, which carries the two crash fixes and
+  the comments explaining why the conservative choice is the correct one.
+- `packages/compiler/src/gcode-ir.ts` is the only place modality exists; the
+  round-trip test in `packages/post-rs274/src/roundtrip.test.ts` is what makes
+  that safe.
+- Validate: `npx tsc --noEmit && npx vitest run` (191 tests).
+- Try it: write a script with `dropcut example surface-finish -o p.js`, then
+  `dropcut compile p.js -m makera-z1` and compare against `-m linuxcnc`.
+
+### Technical details
+
+Package graph as built (dependencies point downward):
+
+```text
+units → math → ir → machine
+                 ↘  geometry → strategies → planner
+                     compiler → post-rs274 → post-makera
+                     analysis                gcode-parser
+                          ↘ script-host ↘ @studio/cli
+```
+
+Measured performance, best-of-N on this machine:
+
+```text
+drop-cutter    89,981 q/s   18,432 tri (typical density, 14 tri/mm2)
+drop-cutter    32,895 q/s   96,800 tri (dense, 50 tri/mm2)
+index build         8.7 ms  96,800 tri
+gcode parse        60   ms  18,531 lines (MakeraBadge.nc)
+```
+
+A real compile of the `surface-finish` example:
+
+```text
+rough#1    z-level rough: 8 levels at 2 mm stepdown, 8 regions, 0.3 mm stock left
+finish#1   constant scallop: 53 iso-scallop contours at 0.488 mm
+15,210 lines · est 10:09 · cut 9,843 mm
+
+SAFETY CERTIFICATE
+  PASS  travel limits         exact
+  PASS  spindle range         exact
+  PASS  feed limits           exact
+  PASS  interlocks            exact
+  PASS  gouge                 verified to 0.360 mm grid, 0.020 mm tolerance
+  PASS  rapid-through-stock   verified to 0.360 mm grid, 0.020 mm tolerance
+  SKIP  fixture collision     not checked — no fixture model defined
+  SKIP  holder collision      not checked — tool stickout and holder geometry unknown
+  error budget           0.0105 mm  (chord-refinement 0.0100 · gcode-rounding 0.0005)
+```

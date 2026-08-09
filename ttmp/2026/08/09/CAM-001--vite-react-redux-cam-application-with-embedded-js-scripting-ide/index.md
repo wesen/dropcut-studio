@@ -47,6 +47,39 @@ eight milestones in Part XIII of the design doc and enumerated in `tasks.md`.
 | [reference/01 — Diary](./reference/01-diary.md) | Chronological investigation log with commands, failures and evidence. |
 | [reference/02 — Prototype API reference and code map](./reference/02-prototype-api-reference-and-code-map.md) | Function-by-function lookup for all three prototypes: signature, behaviour, gotchas, target module. Includes 8 defects found while reading. |
 
+## Implementation
+
+Source lives in `packages/` and `apps/`, outside the ticket workspace.
+
+| Package | Contents |
+| --- | --- |
+| `@cam/units` | Branded scalars; inch normalises to mm on construction |
+| `@cam/math` | Vec3/Box, frame-tagged `Point3`, SE(3) `Transform` (groupoid laws property-tested) |
+| `@cam/ir` | `Path` as a category, non-modal `CanonicalCommand`, provenance, the `ValidatedProgram` brand |
+| `@cam/machine` | Capabilities as data; `xyz-3018`, `makera-z1`, `linuxcnc` profiles; tool geometry |
+| `@cam/geometry` | Mesh/STL, spatial index, drop-cutter, CL field, marching squares, Eikonal |
+| `@cam/strategies` | Raster, constant-scallop, hybrid-waterline, z-level rough, face, pocket, drill |
+| `@cam/planner` | Manufacturing plan, entry, linker, refinement, the plan runner |
+| `@cam/analysis` | Dexel simulator, deviation, sampled checks, error budgets, certificates, time |
+| `@cam/compiler` | `GCodeBlock` IR, the single modal `compress()`, `lower()`, `validate()`, `recertify()` |
+| `@cam/gcode-parser` | Modal RS-274 interpreter, all three arc planes, structured header harvesting |
+| `@cam/post-rs274` / `@cam/post-makera` | Emitter, and a dialect that is pure configuration |
+| `@cam/script-host` | Capability API, sandbox, worked examples |
+| `@studio/cli` | `dropcut compile / check / example / examples / machines` |
+
+Bugs the implementation found that the design phase did not:
+
+- The dexel simulator caught a rapid ploughing through **12.9 mm of stock** on a
+  real finishing compile — two planner defects (retract heights computed from the
+  part rather than the stock; traverses ending at cutting depth).
+- The drop-cutter's first working version ran at **3,197 queries/s**, 60x under
+  the design doc's *unmeasured* estimate. Distance-aware pruning plus
+  nearest-first cell traversal took it to ~78,000.
+- Marching squares emitted zero-length segments where a grid node landed exactly
+  on the contour level; `splitByMask` cut closed loops at the array seam.
+- Nothing mapped a part into the work envelope — `geometry.mesh(name, { at })`
+  was a missing capability, not just a missing fixture.
+
 ## Source material
 
 | Path | Lines | Role |
@@ -77,7 +110,17 @@ Full records in Part XV of the design doc.
 
 ## Status
 
-Current status: **active** — analysis and design complete; implementation not started.
+Current status: **active** — analysis and design complete; the **headless core is
+built and tested** (191 tests, typecheck clean, 14 packages, ~11,100 lines).
+
+Milestones M1 (core + G-code round trip), M2 (geometry kernel), M4 (strategies +
+planner), M5 (analysis + safety certificates) and M7 (scripting host + CLI) are
+done. M3 (Three.js viewport) and M6 (React/Redux shell) are not started — the
+headless pipeline was finished first so every algorithm is testable in Node,
+which is the ordering the design doc recommends.
+
+`dropcut compile prog.js -m makera-z1` turns a JavaScript script into validated,
+simulated, machine-specific G-code with a printed safety certificate.
 
 ## Topics
 
