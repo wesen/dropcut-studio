@@ -7,14 +7,18 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "bench": "vitest bench --run"
+    "bench": "vitest bench --run",
+    "dropcut": "tsx apps/cli/src/main.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "fast-check": "^3.23.2",
+    "tsx": "^4.23.11",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
-  }
+  },
+  "license": "MIT",
+  "description": "A browser CAM application that turns JavaScript into verified CNC machine code"
 }
