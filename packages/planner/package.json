@@ -13,7 +13,6 @@
     "@cam/math": "workspace:*",
     "@cam/ir": "workspace:*",
     "@cam/machine": "workspace:*",
-    "@cam/geometry": "workspace:*",
-    "@cam/strategies": "workspace:*"
+    "@cam/geometry": "workspace:*"
   }
 }
