@@ -11,11 +11,51 @@ name: publish-static-site
 # GitHub OIDC, reads the GitOps PR GitHub App credential, and mints an
 # installation token scoped to the GitOps repo alone.
 
+# Path-filtered so that documentation commits do not cut a release. This repo
+# carries a working diary under ttmp/, and without a filter every diary entry
+# would build an identical site, push a new image, and open a GitOps PR that
+# supersedes the previous one — noise that makes the release history harder to
+# read than the code history.
+#
+# The filter must list every input to `pnpm build`, which is most of the repo:
+# the studio pulls in all fourteen workspace packages through Vite aliases, so a
+# change anywhere under packages/ changes the bundle.
+#
+# The two lists are duplicated because GitHub Actions does not support YAML
+# anchors. Keep them in step.
 on:
   pull_request:
+    paths:
+      - apps/**
+      - packages/**
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - tsconfig.json
+      - tsconfig.base.json
+      - vitest.config.ts
+      - Dockerfile.static
+      - .dockerignore
+      - deploy/gitops-targets.json
+      - .github/workflows/publish-static.yaml
   push:
     branches:
       - main
+    paths:
+      - apps/**
+      - packages/**
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - tsconfig.json
+      - tsconfig.base.json
+      - vitest.config.ts
+      - Dockerfile.static
+      - .dockerignore
+      - deploy/gitops-targets.json
+      - .github/workflows/publish-static.yaml
+  # Use this to republish after a docs-only change, or to re-cut a release
+  # without an empty commit.
   workflow_dispatch:
 
 permissions:
