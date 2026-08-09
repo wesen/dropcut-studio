@@ -5,12 +5,11 @@
 import { useEffect, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { machineIds, getMachine } from "@cam/machine";
-import { EXAMPLES } from "@cam/script-host";
 import { formatDuration } from "@cam/analysis";
 import type { AppDispatch, RootState } from "../state/store.js";
-import { compile } from "../state/compileThunk.js";
+import { restoreSession } from "../state/projectThunks.js";
 import {
-  colorModeChanged, layerToggled, machineChanged, scriptChanged,
+  colorModeChanged, layerToggled, machineChanged,
   simulateToggled, speedChanged, viewChanged,
 } from "../state/slices.js";
 import type { LayerName } from "../state/slices.js";
@@ -18,17 +17,20 @@ import { getArtifact } from "../state/artifactCache.js";
 import { Editor } from "./Editor.js";
 import { Viewport } from "./Viewport.js";
 import { Panels } from "./Panels.js";
+import { ProjectBar } from "./ProjectBar.js";
 import { getViewport, onViewportChange } from "./viewportHandle.js";
 
 export function App() {
   const dispatch = useDispatch<AppDispatch>();
 
-  // Compile once on mount so the app opens with something on screen.
-  useEffect(() => { void dispatch(compile()); }, [dispatch]);
+  // Restore the last session (or fall back to an example) and compile it, so
+  // the app opens showing whatever the user was last working on.
+  useEffect(() => { void dispatch(restoreSession()); }, [dispatch]);
 
   return (
     <div className="app">
       <Header />
+      <ProjectBar />
       <div className="body">
         <div className="left">
           <div className="pane-title">program.cam.js — recompiles as you type</div>
@@ -85,18 +87,6 @@ function Header() {
         {machineIds().map((id) => (
           <option key={id} value={id}>{getMachine(id).name}</option>
         ))}
-      </select>
-
-      <select
-        defaultValue=""
-        onChange={(e) => {
-          const ex = EXAMPLES.find((x) => x.name === e.target.value);
-          if (ex) dispatch(scriptChanged(ex.source));
-        }}
-        title="Load an example program"
-      >
-        <option value="" disabled>load example…</option>
-        {EXAMPLES.map((e) => <option key={e.name} value={e.name}>{e.name}</option>)}
       </select>
 
       <label className="check" title="Material simulation. Off is faster; the certificate says so.">

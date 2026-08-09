@@ -25,7 +25,7 @@ import { buildRenderBuffers } from "@cam/viewer-three";
 import { mm } from "@cam/units";
 import type { Tool } from "@cam/machine";
 import { collectGarbage, putArtifact } from "./artifactCache.js";
-import type { CertificateRow, CompileSucceeded } from "./slices.js";
+import type { CertificateRow, CompileSucceeded, ProjectState } from "./slices.js";
 import { compileFailed, compileStarted, compileSucceeded } from "./slices.js";
 
 /** Meshes available to scripts. Built once — tessellation is not free. */
@@ -41,12 +41,20 @@ export interface CompileThunkResult {
   readonly ok: boolean;
 }
 
-export const compile = createAsyncThunk<
-  CompileThunkResult,
-  void,
-  { state: { project: { script: string; machineId: string; simulate: boolean;
-    simulationResolution: number } } }
->("compile/run", async (_arg, { getState, dispatch }) => {
+/**
+ * The slice of state every thunk in the app needs.
+ *
+ * Declared once and shared, so thunks can dispatch each other. Two thunks with
+ * structurally different `state` types cannot be composed, which TypeScript
+ * reports as an inscrutable overload failure rather than the trivial mismatch
+ * it actually is.
+ */
+export interface ThunkApi {
+  state: { project: ProjectState };
+}
+
+export const compile = createAsyncThunk<CompileThunkResult, void, ThunkApi>(
+  "compile/run", async (_arg, { getState, dispatch }) => {
   const { script, machineId, simulate, simulationResolution } = getState().project;
   const started = performance.now();
   dispatch(compileStarted());

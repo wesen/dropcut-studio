@@ -32,6 +32,8 @@ const autoCompile: Middleware = (api) => {
     const result = next(action);
 
     const type = (action as { type?: string }).type;
+    // Renaming and saving change the document but not the program, so neither
+    // triggers a recompile.
     const triggers = type === scriptChanged.type
       || type === machineChanged.type
       || type === simulateToggled.type;
@@ -58,6 +60,11 @@ export function createStore() {
         machineId: "linuxcnc",
         simulate: true,
         simulationResolution: 140,
+        documentId: null,
+        savedSettings: null,
+        diskFileName: null,
+        saving: false,
+        lastError: null,
       },
     },
     middleware: (getDefault) =>
