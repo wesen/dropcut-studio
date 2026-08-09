@@ -1,0 +1,58 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "ES2022"
+    ],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": false,
+    "exactOptionalPropertyTypes": false,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "baseUrl": ".",
+    "paths": {
+      "@cam/units": [
+        "packages/units/src/index.ts"
+      ],
+      "@cam/math": [
+        "packages/math/src/index.ts"
+      ],
+      "@cam/ir": [
+        "packages/ir/src/index.ts"
+      ],
+      "@cam/machine": [
+        "packages/machine/src/index.ts"
+      ],
+      "@cam/geometry": [
+        "packages/geometry/src/index.ts"
+      ],
+      "@cam/strategies": [
+        "packages/strategies/src/index.ts"
+      ],
+      "@cam/planner": [
+        "packages/planner/src/index.ts"
+      ],
+      "@cam/analysis": [
+        "packages/analysis/src/index.ts"
+      ],
+      "@cam/compiler": [
+        "packages/compiler/src/index.ts"
+      ],
+      "@cam/gcode-parser": [
+        "packages/gcode-parser/src/index.ts"
+      ],
+      "@cam/post-rs274": [
+        "packages/post-rs274/src/index.ts"
+      ],
+      "@cam/post-makera": [
+        "packages/post-makera/src/index.ts"
+      ]
+    }
+  }
+}
