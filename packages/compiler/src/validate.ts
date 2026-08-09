@@ -27,7 +27,15 @@ import {
 import type { MachineProfile } from "@cam/machine";
 
 export interface ValidateOptions {
-  /** Sampled-check results to fold into the certificate, if available. */
+  /**
+   * Results of sampled checks (material simulation), when they have been run.
+   *
+   * Injected rather than computed here because simulation needs the EMITTED
+   * motion — traverses decomposed, arcs resolved — which only exists after the
+   * postprocessor. So the honest flow is: validate exactly, emit, simulate, then
+   * re-certify. Callers that skip simulation get "not-checked", which is the
+   * truthful answer rather than a silent pass.
+   */
   readonly sampled?: {
     readonly gouge?: CheckStatus;
     readonly rapidCrash?: CheckStatus;

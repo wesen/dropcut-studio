@@ -131,6 +131,7 @@ export function runPlan(plan: ManufacturingPlan, opts: RunOptions): RunResult {
       const linkOpts = {
         stayDownDistance: Math.max(3 * set.stepover, 1.5),
         clearanceZ: plan.setup.clearance as number,
+        stockTopZ: plan.setup.stock.topZ as number,
         surfaceAt,
         rideClearance: 0.6,
         feed: op.feed,
@@ -140,19 +141,24 @@ export function runPlan(plan: ManufacturingPlan, opts: RunOptions): RunResult {
       };
 
       if (p === 0) {
-        // First path of the operation: traverse in, then descend properly.
+        // First path of the operation: traverse in at clearance, then descend
+        // under feed control.
         commands.push({
           kind: "traverse",
           to: point(path.start.x, path.start.y, plan.setup.clearance, "work"),
           clearance: { safeZ: plan.setup.clearance, allowCoordinated: true },
           provenance: pathProv,
         });
-        commands.push(...entryCommands(plan, op, path, tool, toolRef, pathProv, surfaceAt));
+        commands.push(...entryCommands(
+          plan, op, path, tool, toolRef, pathProv, surfaceAt, plan.setup.clearance));
       } else {
         const link = planLink(cursor, path.start, linkOpts);
         commands.push(...link.commands);
         if (link.kind === "retract") {
-          commands.push(...entryCommands(plan, op, path, tool, toolRef, pathProv, surfaceAt));
+          // The traverse stopped at the safe height; descend from there rather
+          // than from the global clearance plane, which would mean climbing.
+          commands.push(...entryCommands(
+            plan, op, path, tool, toolRef, pathProv, surfaceAt, link.leavesAtZ));
         }
       }
 
@@ -236,15 +242,22 @@ function entryCommands(
   toolRef: ToolRef,
   prov: Provenance,
   surfaceAt: (x: number, y: number) => number,
+  fromZ: number,
 ): CanonicalCommand<"work">[] {
   const start = path.start;
 
+  // Already at or below the target: nothing to descend.
+  if (fromZ <= start.z + 1e-9) return [];
+
   if (op.kind !== "rough-surface" && op.kind !== "pocket") {
+    // Finishing paths start ON the CL surface, so a straight controlled plunge
+    // is correct. It must be a CUT, not a rapid: it may pass through material
+    // that roughing has not removed.
     return [{
       kind: "cut",
       path: {
         frame: "work",
-        start: point(start.x, start.y, plan.setup.clearance, "work"),
+        start: point(start.x, start.y, fromZ, "work"),
         end: start,
         segments: [{ kind: "line", to: start }],
       },
@@ -260,7 +273,7 @@ function entryCommands(
   const next = firstDirection(path);
   const entry = planEntry({
     x: start.x, y: start.y, z: start.z,
-    fromZ: Math.min(plan.setup.clearance, start.z + 4),
+    fromZ,
     dirX: next.x, dirY: next.y,
     available: next.length,
     toolRadius: radiusOf(tool.geometry),

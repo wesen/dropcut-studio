@@ -23,6 +23,21 @@ export interface LinkOptions {
   readonly stayDownDistance: number;
   /** Safe height for retract-and-rapid links. */
   readonly clearanceZ: number;
+  /**
+   * Top of the raw stock.
+   *
+   * Retracts are clamped to at least this height. That is not a nicety: the
+   * surface query below reports the PART surface, and on a job with no prior
+   * roughing the material above the part is still solid. Computing a "local
+   * safe height" from the part alone produced rapids that ploughed through
+   * 12.9 mm of untouched stock — caught by the dexel simulator, not by any
+   * amount of staring at the code.
+   *
+   * A stock-aware planner could retract lower once roughing has cleared a
+   * region. Doing that properly needs in-planner stock tracking; until then,
+   * conservative is correct.
+   */
+  readonly stockTopZ: number;
   /** Surface height query, used to test whether a straight link is clear. */
   readonly surfaceAt: (x: number, y: number) => number;
   /** Extra height to keep above the surface when riding across. */
@@ -36,6 +51,13 @@ export interface LinkOptions {
 export interface LinkDecision {
   readonly kind: "stay-down" | "retract";
   readonly commands: readonly CanonicalCommand<"work">[];
+  /**
+   * Height the tool is left at. For a retract this is the safe height, NOT the
+   * cutting depth: descending into material is the entry planner's job, at a
+   * controlled feed. A traverse that ended at cutting depth would emit a rapid
+   * straight down through uncut stock.
+   */
+  readonly leavesAtZ: number;
 }
 
 /**
@@ -54,12 +76,17 @@ export function planLink(
 ): LinkDecision {
   const gap = Math.hypot(to.x - from.x, to.y - from.y);
 
+  // Staying down is only considered for SHORT links, where the adjacent region
+  // has almost certainly just been machined by the previous pass. It is checked
+  // against the part surface, which is the same limitation as above; the risk is
+  // bounded because the move is at feed rate over at most a few stepovers.
   if (gap <= opts.stayDownDistance && isStraightLinkClear(from, to, opts)) {
     const path = pathFrom(point(from.x, from.y, from.z, "work"))
       .lineTo(point(to.x, to.y, to.z, "work"))
       .build();
     return {
       kind: "stay-down",
+      leavesAtZ: to.z,
       commands: [{
         kind: "cut",
         path,
@@ -72,20 +99,23 @@ export function planLink(
     };
   }
 
-  // Retract to a height that clears everything between here and there, not just
-  // the global clearance plane — on a tall part the global plane can be far
-  // above what this particular link needs.
+  // Retract high enough to clear everything between here and there. The local
+  // optimum (part surface + ride clearance) is capped by the global clearance
+  // plane above, and floored by the STOCK TOP below — see `stockTopZ`.
   const localSafe = Math.min(
     opts.clearanceZ,
     maxSurfaceAlong(from, to, opts) + opts.rideClearance,
   );
-  const safeZ = Math.max(localSafe, from.z, to.z);
+  const safeZ = Math.max(localSafe, opts.stockTopZ, from.z, to.z);
 
   return {
     kind: "retract",
+    leavesAtZ: safeZ,
     commands: [{
+      // Ends at the SAFE height above the target XY. The caller follows this
+      // with an entry move that descends under feed control.
       kind: "traverse",
-      to: point(to.x, to.y, to.z, "work"),
+      to: point(to.x, to.y, safeZ, "work"),
       clearance: { safeZ: mm(safeZ), allowCoordinated: false },
       provenance: opts.provenance,
     }],
