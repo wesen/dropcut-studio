@@ -1,0 +1,24 @@
+# Artifact carrier for cam-ide.yolo.scapegoat.dev.
+#
+# This image does not run a server. The cluster's shared `static-sites-host`
+# (Caddy) serves the files; a one-shot publisher Job copies /site out of this
+# image into the shared PVC. Alpine rather than scratch, because that Job runs
+# `sh` inside this image.
+#
+# The build happens in CI, not here: the reusable workflow's test_command runs
+# `pnpm build` before `docker build`, so `apps/studio/dist` already exists in
+# the build context. See .github/workflows/publish-static.yaml.
+
+FROM alpine:3.20
+
+LABEL org.opencontainers.image.title="dropcut-studio-static"
+LABEL org.opencontainers.image.description="DROPCUT Studio static site artifact for cam-ide.yolo.scapegoat.dev"
+LABEL org.opencontainers.image.source="https://github.com/wesen/dropcut-studio"
+
+WORKDIR /
+COPY apps/studio/dist/ /site/
+
+# Fail the build here rather than at publish time. An empty /site would
+# otherwise publish successfully and replace a working release with a 404.
+RUN test -f /site/index.html \
+    && find /site -type f | sort > /site-manifest.txt

@@ -1,0 +1,12 @@
+{
+  "targets": [
+    {
+      "name": "cam-ide-prod",
+      "gitops_repo": "wesen/2026-03-27--hetzner-k3s",
+      "gitops_branch": "main",
+      "manifest_path": "gitops/kustomize/cam-ide/publish-job.yaml",
+      "container_name": "publish",
+      "patch_strategy": "static-publisher-job"
+    }
+  ]
+}
