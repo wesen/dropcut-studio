@@ -23,6 +23,20 @@ topics:
       description: Software architecture and cross-layer system design
     - slug: safety
       description: Machine and software safety constraints and verification
+    - slug: cnc
+      description: CNC machine control, motion, machine tools
+    - slug: protocol
+      description: Wire protocols, framing, transport and packet formats
+    - slug: cli
+      description: Command-line interfaces and tooling
+    - slug: glazed
+      description: go-go-golems Glazed CLI/structured-output framework
+    - slug: research
+      description: Technology research and evidence gathering
+    - slug: reference
+      description: Reference specifications and lookup material
+    - slug: frontend
+      description: Browser UI, pages, styling and client-side behaviour
 docTypes:
     - slug: design-doc
       description: Structured rationale and architecture notes
@@ -34,6 +48,8 @@ docTypes:
       description: Ticket landing page
     - slug: skill
       description: Skill documentation (what it's for and when to use it)
+    - slug: design
+      description: Design and architecture guide (docmgr 'design' doc-type directory)
 intent:
     - slug: long-term
       description: Likely to persist

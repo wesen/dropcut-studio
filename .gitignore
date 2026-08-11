@@ -3,3 +3,8 @@ dist/
 *.tsbuildinfo
 .vitest/
 .playwright-mcp/
+
+# MZ1-001 keeps shallow clones of upstream reference implementations under the
+# ticket as research evidence. They have their own history and are not ours to
+# vendor; docs cite them by path, and README/NOTICE record how to re-clone.
+ttmp/**/vendor/

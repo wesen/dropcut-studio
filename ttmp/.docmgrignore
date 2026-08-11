@@ -2,3 +2,7 @@
 .git/
 _templates/
 _guidelines/
+
+# Vendored upstream clones kept inside tickets as research evidence.
+# Their Markdown has no docmgr frontmatter and is not ours to rewrite.
+vendor/
