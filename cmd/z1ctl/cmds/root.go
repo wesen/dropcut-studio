@@ -52,9 +52,13 @@ func Register(root *cobra.Command) error {
 	if err != nil {
 		return err
 	}
+	unlock, err := NewUnlockCommand()
+	if err != nil {
+		return err
+	}
 
 	if err := cli.AddCommandsToRootCommand(root,
-		[]cmds.Command{discover, status, watch, exec, info, doctor, serve}, nil,
+		[]cmds.Command{discover, status, watch, exec, info, doctor, serve, unlock}, nil,
 		parserOptions()...); err != nil {
 		return errors.Wrap(err, "register top-level commands")
 	}

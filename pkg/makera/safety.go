@@ -3,6 +3,7 @@
 package makera
 
 import (
+	"context"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -133,6 +134,28 @@ func AssertRealtimeAllowed(ch byte) error {
 		return nil
 	}
 	return errors.Wrapf(ErrMotionNotAuthorised, "refusing realtime byte 0x%02X", ch)
+}
+
+// Unlock clears a latched alarm by sending the GRBL unlock command.
+//
+// This is the FIRST authorised command in this package, and it is deliberately
+// narrow. The name carries the authorisation: a reader of any call site can see
+// that a human asked for this.
+//
+// Why this is safe to authorise while motion is not: `$X` clears the alarm lock
+// and nothing else. It commands no movement. Upstream's Controller.unlock()
+// (vendor/community-carvera-controller/carveracontroller/Controller.py:1773)
+// does exactly this and nothing more.
+//
+// What it DOES do is re-enable motion, so callers must preflight first. This
+// function does not preflight for you — that belongs at the call site, where
+// the operator's intent is known.
+//
+// It never retries. If the alarm does not clear, that is information, and
+// sending the command twice hides it.
+func (c *Client) Unlock(ctx context.Context) ([]Message, error) {
+	c.logger.Warn().Msg("sending $X to clear a latched alarm — this re-enables motion")
+	return c.commandUnchecked(ctx, "$X")
 }
 
 // Motion is deliberately not implemented in this package yet.

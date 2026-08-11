@@ -121,11 +121,15 @@ func (c *DoctorCommand) RunIntoGlazeProcessor(
 	case st.State == "Idle":
 		checks = append(checks, check{"machine state", "ok", st.State})
 	case st.State == "Alarm":
-		// H: is only present while the machine is halted, so a non-zero value
-		// here is the reason it stopped.
+		// H: is only present while the machine is halted, so a value here is
+		// the reason it stopped.
 		detail := "Alarm — motion is refused until the alarm is cleared"
 		if reason, ok := st.Raw.At("H", 0); ok {
-			detail = fmt.Sprintf("Alarm (halt reason %d) — motion is refused until cleared", int(reason))
+			text, recovery, _ := makera.HaltReason(int(reason))
+			detail = fmt.Sprintf("Alarm: %s (H:%d) — %s", text, int(reason), recovery)
+			if recovery == makera.RecoveryUnlock {
+				detail += "; run `z1ctl unlock --confirm`"
+			}
 		}
 		checks = append(checks, check{"machine state", "warn", detail})
 	default:
