@@ -19,6 +19,10 @@ topics:
       description: In-app code editor, compiler diagnostics, scripting host
     - slug: toolpath
       description: Toolpath strategies, drop-cutter, waterline, scallop, verification
+    - slug: architecture
+      description: Software architecture and cross-layer system design
+    - slug: safety
+      description: Machine and software safety constraints and verification
 docTypes:
     - slug: design-doc
       description: Structured rationale and architecture notes

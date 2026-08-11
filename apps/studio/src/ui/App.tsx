@@ -2,7 +2,7 @@
  * The application shell: header, editor, viewport, transport, panels.
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { machineIds, getMachine } from "@cam/machine";
 import { formatDuration } from "@cam/analysis";
@@ -19,6 +19,7 @@ import { Viewport } from "./Viewport.js";
 import { Panels } from "./Panels.js";
 import { ProjectBar } from "./ProjectBar.js";
 import { getViewport, onViewportChange } from "./viewportHandle.js";
+import { ApiHandbook } from "./ApiHandbook.js";
 
 export function App() {
   const dispatch = useDispatch<AppDispatch>();
@@ -54,6 +55,7 @@ export function App() {
 
 function Header() {
   const dispatch = useDispatch<AppDispatch>();
+  const [handbookOpen, setHandbookOpen] = useState(false);
   const machineId = useSelector((s: RootState) => s.project.machineId);
   const simulate = useSelector((s: RootState) => s.project.simulate);
   const status = useSelector((s: RootState) => s.compile.status);
@@ -100,6 +102,10 @@ function Header() {
 
       <div className="spacer" />
 
+      <button onClick={() => setHandbookOpen(true)} title="Read and copy the JavaScript API reference">
+        JS API ?
+      </button>
+
       <div className="status">
         {status === "running" && <span className="dim">compiling…</span>}
         {status === "ok" && stats && (
@@ -120,6 +126,7 @@ function Header() {
       <button className="primary" onClick={download} disabled={status !== "ok"}>
         EXPORT .NC
       </button>
+      {handbookOpen && <ApiHandbook onClose={() => setHandbookOpen(false)} />}
     </header>
   );
 }
