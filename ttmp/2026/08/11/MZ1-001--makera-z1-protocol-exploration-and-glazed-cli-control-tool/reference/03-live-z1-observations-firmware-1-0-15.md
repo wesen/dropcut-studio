@@ -110,7 +110,9 @@ Upstream's regex is `version = \d+\.\d+\.\d+[a-zA-Z0-9\-_]*`
 comparison is being done on a truncated string.
 
 - No `c` in the version ⇒ **stock Makera firmware**, not Community firmware.
-  Consistent with everything else below (`R:` and `H:` absent from status).
+  Consistent with `R:` being absent from the status report. (`H:` is also absent
+  here, but that turned out to be a statement about machine state rather than
+  firmware capability — see §3.1.)
 - **Action:** parse the version as a dotted list of arbitrary length. Do not
   assume three components.
 
@@ -170,7 +172,7 @@ Verbatim:
 | `MPos` / `WPos` component count | 3, optionally 4 (`x,y,z[,a]`) | **5** — `x,y,z,a,b`. Confirmed independently by `get pos` (§7) |
 | `G:` active coordinate system | present | **absent.** Stock firmware does not report it — you must use `get wcs` (§6) |
 | `R:` rotation | community firmware only | absent, as predicted |
-| `H:` halt reason | community firmware only | absent, as predicted |
+| `H:` halt reason | community firmware only | **present on stock firmware — but only while halted.** See §4.1 |
 | `S:` | 3+ values, length-dependent | **10 values** here |
 | `L:` | 5 values | 5 values, **but with spaces after commas**: `0, 0, 0, 0.0,100.0` |
 | `E:` | diagnose-only (endstops, 6 values) | **also appears in status, with 5 values** — meaning unknown |
@@ -198,6 +200,34 @@ printing a position that looks real.
 
 ---
 
+### 3.1 `H:` appears only while halted — correction
+
+An earlier reading of this session concluded `H:` was absent on stock firmware
+and therefore community-only. That was wrong, and the way it was wrong is worth
+recording: the machine simply was not halted at the time.
+
+After the sensor-mapping session (§4.1) the emergency stop had been pressed, and
+the status report gained the key:
+
+```
+<Alarm|MPos:-1.0000,…|T:2,0.054,-1|L:0, 0, 0, 0.0,100.0|H:13|C:3,1,0,1|E:0,0,0,57,7610|OTA:0,0>
+                                                         ↑ present only while halted
+```
+
+`H:13` is the halt reason for an emergency-stop halt on this firmware. Other
+codes are unknown.
+
+The general lesson is that "key absent" is evidence about machine *state*, not
+about firmware *capability*. Any conclusion of the form "stock firmware does not
+report X" needs the machine to have been in a state where X would have been
+reported.
+
+The same caution applies to `P:` (playback progress), which is absent here only
+because no job was running, and to `R:` (WCS rotation), which remains
+unobserved — but has not been ruled out by this session either.
+
+---
+
 ## 4. Diagnose report — every vector is longer than documented
 
 Verbatim:
@@ -218,14 +248,59 @@ Verbatim:
 
 **The `E` vector is the safety-critical one and it is two elements longer than
 upstream reads.** Upstream maps indices 0–5 to xMin/xMax/yMin/yMax/zMax/cover
-(`CC/Controller.py:1495-1501`). With 8 values on this firmware, that mapping may
-be *shifted*, not merely truncated — meaning a naive port could read the wrong
-bit as "cover closed".
+(`CC/Controller.py:1495-1501`). With 8 values on this firmware the mapping could
+have been *shifted* rather than merely appended, which would have made a naive
+port read the wrong bit as "cover closed".
 
-**Do not implement a cover-open interlock against the `E` vector until the field
-order is confirmed empirically** (open the cover, capture `diagnose`, diff). That
-is now the first item on the hardware to-do list, because design guide §17.2
-proposes gating job start on exactly this.
+**Resolved on 2026-08-11 — see §4.1. The vector is appended, not shifted.**
+
+### 4.1 Endstop mapping, confirmed empirically
+
+An operator ran `scripts/06-sensor-map.py`, which polls `diagnose` and prints
+only changed fields, and triggered one input at a time. The transitions:
+
+```
+     1.18s  V[1]  34 -> 33      (during "touch nothing" — self-drift, not an input)
+     7.22s  E[5]   1 -> 0       cover OPENED
+    15.31s  E[5]   0 -> 1       cover closed
+    18.79s  E[5]   1 -> 0       cover opened again (to reach the probe)
+    21.29s  P[1]   0 -> 1       tool setter touched
+    23.30s  P[1]   1 -> 0       released
+    25.78s  P[1]   0 -> 1       touched again
+    27.81s  P[1]   1 -> 0       released
+    35.28s  G[1]   0 -> 1  and  I[0] 0 -> 1     emergency stop pressed
+    39.81s  I[0]   1 -> 0       released
+    42.38s  I[0]   0 -> 1       pressed again
+    45.45s  I[0]   1 -> 0       released
+    48.49s  E[5]   0 -> 1       cover closed
+```
+
+**Conclusions:**
+
+| Index | Meaning | Basis |
+|---|---|---|
+| `E[5]` | **Cover interlock — 1 closed, 0 open** | **Confirmed**, three correlated transitions |
+| `E[0..4]` | xMin, xMax, yMin, yMax, zMax | **Inherited, unverified** — triggering an axis limit needs motion. All read 0 throughout, consistent with no axis at a limit |
+| `E[6]`, `E[7]` | unknown | Constant `1` and `0` for the whole session |
+| `P[1]` | Tool-length sensor / "calibrate" | **Confirmed**, two clean toggles |
+| `P[0]` | 3D touch probe | Unverified; never moved, consistent with the 3D probe not being used |
+| `I[0]` | Emergency stop — 1 engaged | **Confirmed**, two toggles |
+| `G[1]` | unknown | Toggled alongside the first E-stop press but continued independently. Correlated with that interaction; meaning not established |
+| `V[1]` | analog, self-drifting | Changed during the baseline window while nothing was touched. Values 33/34 are not boolean. Muted as noise in the mapping script |
+
+**The cover bit sits exactly where published clients put it.** The two extra
+fields are appended at indices 6 and 7, so the documented 6-field layout applies
+unchanged to indices 0–5. The earlier concern that a port might read the wrong
+bit was unfounded — but it was only established by measuring, not by assuming.
+
+Implemented in `pkg/makera/report.go` as `Diagnose.CoverClosed()`, which returns
+a second `known` boolean so a machine sending a shorter vector yields "unknown"
+rather than a confident "closed". Regression fixtures are the four verbatim
+lines above, in `TestCoverInterlockMapping`.
+
+**Side effect worth knowing:** pressing the emergency stop leaves the machine in
+`Alarm` with `H:13`, and it stays there after release. Motion is refused until
+the alarm is cleared.
 
 ---
 
@@ -481,8 +556,10 @@ EOT (`-e` forms). ADR-004 stands.
 |---|---|---|
 | 3 | Does the Z1 emit `M485` protocol announcements? | Never observed. Autodetect worked, so this is academic |
 | 6 | `config_z1.json` shipped but unwired upstream | Run `config-get-all -e` and diff the key set against `CC/config_z1.json` |
-| **NEW** | **`E:` field order in `diagnose` (8 values, not 6)** | **Open the cover, re-capture `diagnose`, diff. Blocks the §17.2 interlock** |
-| NEW | `E:` in the *status* report (5 values) — meaning unknown | Correlate against machine activity |
+| ~~NEW~~ | ~~`E:` field order in `diagnose`~~ | **RESOLVED 2026-08-11 — see §4.1. Appended, not shifted; cover is `E[5]`** |
+| NEW | `E:` in the *status* report (5 values, e.g. `0,0,0,57,7610`) — unrelated to the diagnose `E:` | Correlate against machine activity |
+| NEW | `G[1]` in diagnose — toggled alongside the first E-stop press, then independently | Trigger the machine's front panel buttons one at a time |
+| NEW | Halt reason codes beyond `H:13` (emergency stop) | Collect as they occur |
 | NEW | `OTA:0,0` semantics | Probably OTA update state; harmless to pass through |
 | NEW | Does `play` take `-O` or `-v` on stock firmware? | Test on a scratch air-cut file, with the spindle off and the operator present — not before |
 | NEW | Does the download path return the placeholder MD5? | Requires implementing the framed download (phase 3) |

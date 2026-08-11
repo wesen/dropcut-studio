@@ -65,8 +65,8 @@
 ## TODO — Phase 4: USB and polish
 
 - [ ] `transport_serial.go` (115200, 2 s post-open settle, 128-byte blocks)
-- [ ] **BLOCKED — confirm the diagnose `E:` field order on hardware** (8 values on real firmware, upstream maps 6). Open the cover, re-capture `diagnose`, diff. Gates the `z1ctl doctor` cover interlock
-- [ ] `z1ctl doctor` preflight command (needs the item above)
+- [x] **Confirm the diagnose `E:` field order on hardware** — done 2026-08-11. Appended, not shifted; cover is `E[5]` (1 = closed). Also confirmed `P[1]` tool setter and `I[0]` e-stop
+- [x] `z1ctl doctor` cover interlock, backed by `Diagnose.CoverClosed()` with an explicit `known` return
 - [ ] Glazed help pages, shell completions
 - [ ] Validate `--protocol smoothie` end-to-end if a legacy machine is available
 

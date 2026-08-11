@@ -85,7 +85,13 @@ def diff(old, new):
 
 # Fields that are expected to drift on their own (temperatures, signal strength,
 # timers). Noisy by nature — muted by default so real transitions stand out.
-NOISY = {("S", 4), ("S", 5), ("RSSI", 0), ("S", 1)}
+NOISY = {
+    ("S", 4), ("S", 5),   # spindle / board temperatures
+    ("S", 1),             # spindle target
+    ("RSSI", 0),          # wifi signal
+    ("V", 1),             # analog, drifts between adjacent values on its own —
+                          # observed changing during a "touch nothing" baseline
+}
 
 
 def main():
