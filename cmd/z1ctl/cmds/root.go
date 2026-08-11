@@ -48,9 +48,13 @@ func Register(root *cobra.Command) error {
 	if err != nil {
 		return err
 	}
+	serve, err := NewServeCommand()
+	if err != nil {
+		return err
+	}
 
 	if err := cli.AddCommandsToRootCommand(root,
-		[]cmds.Command{discover, status, watch, exec, info, doctor}, nil,
+		[]cmds.Command{discover, status, watch, exec, info, doctor, serve}, nil,
 		parserOptions()...); err != nil {
 		return errors.Wrap(err, "register top-level commands")
 	}
