@@ -68,16 +68,89 @@ func TestParseLiveDiagnoseReport(t *testing.T) {
 	// colon rule is required.
 	assert.Equal(t, -47, d.RSSI)
 
-	// EIGHT endstop values where published clients map six. Until the field
-	// order is established empirically, no accessor may claim to know which
-	// index is the cover interlock.
+	// EIGHT endstop values where published clients map six. The mapping session
+	// established that the vector is appended, not shifted, so the published
+	// indices still apply.
 	assert.Len(t, d.Endstops, 8)
-	assert.False(t, d.EndstopMappingKnown(),
-		"stock Z1 firmware sends 8 endstop values; the mapping is unconfirmed")
+	assert.True(t, d.EndstopMappingKnown())
+	assert.Equal(t, []float64{1, 0}, d.ExtraEndstopFields(),
+		"the two fields beyond the published mapping must be surfaced, not dropped")
 
 	assert.False(t, d.EStop)
 	assert.Equal(t, 6, len(rep.Fields["S"]))
 	assert.Equal(t, 5, len(rep.Fields["G"]))
+}
+
+// TestCoverInterlockMapping uses the transitions captured on 2026-08-11 while an
+// operator opened and closed the cover, touched the tool setter and pressed the
+// emergency stop. These four lines are the empirical basis for reading E[5] as
+// the cover bit; if this test is ever changed, the mapping must be re-measured
+// on hardware, not reasoned about.
+func TestCoverInterlockMapping(t *testing.T) {
+	cases := []struct {
+		name       string
+		line       string
+		wantClosed bool
+		wantEStop  bool
+		wantSetter bool
+	}{
+		{
+			name:       "baseline: cover closed, nothing pressed",
+			line:       `{S:0,10000,0,0,29,25|L:0,0|V:1,34|F:0,0|G:1,0,0,0,0|T:0|C:1|E:0,0,0,0,0,1,1,0|P:0,0|I:0|RSSI:-48}`,
+			wantClosed: true,
+		},
+		{
+			name:       "cover opened at 7.22s",
+			line:       `{S:0,10000,0,0,29,25|L:0,0|V:1,33|F:0,0|G:1,0,0,0,0|T:0|C:1|E:0,0,0,0,0,0,1,0|P:0,0|I:0|RSSI:-48}`,
+			wantClosed: false,
+		},
+		{
+			name:       "tool setter touched at 21.29s, cover still open",
+			line:       `{S:0,10000,0,0,29,25|L:0,0|V:1,33|F:0,0|G:1,0,0,0,0|T:0|C:1|E:0,0,0,0,0,0,1,0|P:0,1|I:0|RSSI:-48}`,
+			wantClosed: false,
+			wantSetter: true,
+		},
+		{
+			name:       "emergency stop pressed at 35.28s",
+			line:       `{S:0,10000,0,0,29,25|L:0,0|V:1,33|F:0,0|G:1,1,0,0,0|T:0|C:1|E:0,0,0,0,0,0,1,0|P:0,0|I:1|RSSI:-48}`,
+			wantClosed: false,
+			wantEStop:  true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rep, err := ParseReport(tc.line, '{', '}')
+			require.NoError(t, err)
+			d := InterpretDiagnose(rep)
+
+			closed, known := d.CoverClosed()
+			require.True(t, known, "the cover bit must be locatable")
+			assert.Equal(t, tc.wantClosed, closed)
+			assert.Equal(t, tc.wantEStop, d.EStop)
+			assert.Equal(t, tc.wantSetter, d.ToolSetter)
+
+			// No axis was moved during the session, so every limit reads clear.
+			for _, idx := range []int{EndstopXMin, EndstopXMax, EndstopYMin, EndstopYMax, EndstopZMax} {
+				triggered, known := d.EndstopTriggered(idx)
+				require.True(t, known)
+				assert.False(t, triggered, "endstop %d", idx)
+			}
+		})
+	}
+}
+
+// TestCoverUnknownWhenVectorTooShort guards the failure mode that matters: a
+// machine that sends fewer endstop fields than the mapping needs must yield
+// "unknown", never a confident "closed".
+func TestCoverUnknownWhenVectorTooShort(t *testing.T) {
+	rep, err := ParseReport(`{E:0,0,0|I:0}`, '{', '}')
+	require.NoError(t, err)
+	d := InterpretDiagnose(rep)
+
+	closed, known := d.CoverClosed()
+	assert.False(t, known, "a short vector must report unknown")
+	assert.False(t, closed, "unknown must never present as closed")
+	assert.False(t, d.EndstopMappingKnown())
 }
 
 func TestParseReportRobustness(t *testing.T) {

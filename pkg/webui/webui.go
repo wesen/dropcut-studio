@@ -291,12 +291,17 @@ func (s *Server) handleDoctor(w http.ResponseWriter, r *http.Request) {
 		checks = append(checks, checkPayload{"emergency stop", statusOf(!d.EStop),
 			pick(!d.EStop, "clear", "engaged")})
 		checks = append(checks, checkPayload{"wifi signal", "ok", itoa(d.RSSI) + " dBm"})
-		if d.EndstopMappingKnown() {
-			checks = append(checks, checkPayload{"cover interlock", "ok", "endstop vector has the expected 6 fields"})
+
+		if closed, known := d.CoverClosed(); !known {
+			checks = append(checks, checkPayload{"cover", "unknown",
+				"machine sent " + itoa(len(d.Endstops)) + " endstop fields, fewer than the mapping needs"})
+		} else if closed {
+			checks = append(checks, checkPayload{"cover", "ok", "closed"})
 		} else {
-			checks = append(checks, checkPayload{"cover interlock", "unknown",
-				"endstop vector has " + itoa(len(d.Endstops)) + " fields, not the 6 published clients map; " +
-					"field order unconfirmed, so the cover bit cannot be read safely"})
+			checks = append(checks, checkPayload{"cover", "warn", "OPEN — motion must not start"})
+		}
+		if d.ToolSetter {
+			checks = append(checks, checkPayload{"tool setter", "warn", "triggered"})
 		}
 		checks = append(checks, checkPayload{"frame decoding", statusOf(c.Drops() == 0),
 			pick(c.Drops() == 0, "no dropped frames", itoa(c.Drops())+" frames dropped")})

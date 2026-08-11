@@ -117,9 +117,18 @@ func (c *DoctorCommand) RunIntoGlazeProcessor(
 		checks = append(checks, check{"status", "warn", err.Error()})
 		return emit()
 	}
-	if st.State == "Idle" {
+	switch {
+	case st.State == "Idle":
 		checks = append(checks, check{"machine state", "ok", st.State})
-	} else {
+	case st.State == "Alarm":
+		// H: is only present while the machine is halted, so a non-zero value
+		// here is the reason it stopped.
+		detail := "Alarm — motion is refused until the alarm is cleared"
+		if reason, ok := st.Raw.At("H", 0); ok {
+			detail = fmt.Sprintf("Alarm (halt reason %d) — motion is refused until cleared", int(reason))
+		}
+		checks = append(checks, check{"machine state", "warn", detail})
+	default:
 		checks = append(checks, check{"machine state", "warn",
 			st.State + " — not idle, a job may be running"})
 	}
@@ -140,13 +149,28 @@ func (c *DoctorCommand) RunIntoGlazeProcessor(
 			checks = append(checks, check{"emergency stop", "ok", "clear"})
 		}
 		checks = append(checks, check{"wifi signal", "ok", fmt.Sprintf("%d dBm", d.RSSI)})
-		if d.EndstopMappingKnown() {
-			checks = append(checks, check{"cover interlock", "ok",
-				"endstop vector has the expected 6 fields"})
+
+		if closed, known := d.CoverClosed(); !known {
+			checks = append(checks, check{"cover", "unknown",
+				fmt.Sprintf("machine sent %d endstop fields, fewer than the %d the mapping needs",
+					len(d.Endstops), 6)})
+		} else if closed {
+			checks = append(checks, check{"cover", "ok", "closed"})
 		} else {
-			checks = append(checks, check{"cover interlock", "unknown",
-				fmt.Sprintf("endstop vector has %d fields, not the 6 published clients map; "+
-					"field order unconfirmed, so the cover bit cannot be read safely", len(d.Endstops))})
+			checks = append(checks, check{"cover", "warn", "OPEN — motion must not start"})
+		}
+
+		if d.ToolSetter {
+			checks = append(checks, check{"tool setter", "warn", "triggered"})
+		}
+		for name, idx := range map[string]int{
+			"endstop X min": makera.EndstopXMin, "endstop X max": makera.EndstopXMax,
+			"endstop Y min": makera.EndstopYMin, "endstop Y max": makera.EndstopYMax,
+			"endstop Z max": makera.EndstopZMax,
+		} {
+			if triggered, known := d.EndstopTriggered(idx); known && triggered {
+				checks = append(checks, check{name, "warn", "triggered — axis is at a limit"})
+			}
 		}
 	}
 

@@ -211,35 +211,101 @@ func InterpretStatus(r *Report) Status {
 	return s
 }
 
-// Diagnose is the interpreted diagnose report.
+// Endstop vector indices.
 //
-// NOTE: the endstop vector `E:` carries EIGHT values on real Z1 firmware where
-// published clients map six (xMin, xMax, yMin, yMax, zMax, cover). The mapping
-// may be shifted rather than merely truncated, so the individual endstop and
-// cover accessors are deliberately NOT provided. Reading index 5 as "cover"
-// could report a closed cover while it is open, which is precisely the failure
-// a safety interlock exists to prevent. Use Endstops to see the raw vector, and
-// establish the mapping empirically before building anything on it.
+// Real Z1 firmware sends EIGHT values where published clients map six. The
+// mapping was established empirically on firmware 1.0.15.0.1.11 (2026-08-11) by
+// triggering one physical input at a time and diffing the report.
+//
+// The result: the vector is APPENDED, not shifted. Index 5 is the cover
+// interlock exactly where published clients put it, and indices 6 and 7 are
+// additional fields that were constant (1 and 0) throughout the session.
+//
+// Confirmed by observation:
+//
+//	E[5]  cover interlock — 1 when closed, 0 when open (three transitions)
+//
+// Inherited from published clients and NOT independently verified, because
+// triggering an axis limit requires motion:
+//
+//	E[0]  X min   E[1]  X max
+//	E[2]  Y min   E[3]  Y max
+//	E[4]  Z max
+const (
+	EndstopXMin  = 0
+	EndstopXMax  = 1
+	EndstopYMin  = 2
+	EndstopYMax  = 3
+	EndstopZMax  = 4
+	EndstopCover = 5
+
+	// endstopMinFields is the number of elements required before any index in
+	// the published mapping can be read.
+	endstopMinFields = 6
+)
+
+// Diagnose is the interpreted diagnose report.
 type Diagnose struct {
 	Endstops []float64
 	EStop    bool
-	Probe    bool
-	RSSI     int
-	Raw      *Report
+	// Probe is P[0], the 3D touch probe. Not exercised during the mapping
+	// session, so this index is inherited from published clients.
+	Probe bool
+	// ToolSetter is P[1], which published clients call "calibrate". Confirmed:
+	// it toggled twice when the tool-length sensor was touched.
+	ToolSetter bool
+	RSSI       int
+	Raw        *Report
 }
 
-// EndstopMappingKnown reports whether the endstop vector matches the length
-// published clients assume. It is false on stock Z1 firmware.
-func (d Diagnose) EndstopMappingKnown() bool { return len(d.Endstops) == 6 }
+// EndstopMappingKnown reports whether the endstop vector is long enough for the
+// published index mapping to apply.
+//
+// True on real Z1 firmware: the vector has eight elements, of which the first
+// six follow the documented layout and the remaining two are additions.
+func (d Diagnose) EndstopMappingKnown() bool { return len(d.Endstops) >= endstopMinFields }
+
+// CoverClosed reports the cover interlock.
+//
+// The second return value is false when the machine did not send enough endstop
+// fields to locate the bit. Callers gating motion on this MUST treat unknown as
+// "do not proceed" rather than as "closed" — a preflight that cannot verify the
+// cover has not verified the cover.
+func (d Diagnose) CoverClosed() (closed, known bool) {
+	if !d.EndstopMappingKnown() {
+		return false, false
+	}
+	return d.Endstops[EndstopCover] != 0, true
+}
+
+// EndstopTriggered reports one endstop by index, using the constants above.
+// Indices 0-4 are inherited from published clients rather than verified here.
+func (d Diagnose) EndstopTriggered(idx int) (triggered, known bool) {
+	if idx < 0 || idx >= len(d.Endstops) || !d.EndstopMappingKnown() {
+		return false, false
+	}
+	return d.Endstops[idx] != 0, true
+}
+
+// ExtraEndstopFields returns the elements beyond the published mapping. On
+// firmware 1.0.15.0.1.11 these were constant (1, 0) and their meaning is
+// unknown; they are surfaced rather than dropped.
+func (d Diagnose) ExtraEndstopFields() []float64 {
+	if len(d.Endstops) <= endstopMinFields {
+		return nil
+	}
+	return d.Endstops[endstopMinFields:]
+}
 
 // InterpretDiagnose maps a generic Report onto named fields.
 func InterpretDiagnose(r *Report) Diagnose {
 	d := Diagnose{
-		Endstops: r.Fields["E"],
-		EStop:    r.Int("I", 0, 0) != 0,
-		Probe:    r.Int("P", 0, 0) != 0,
-		RSSI:     r.Int("RSSI", 0, 0),
-		Raw:      r,
+		Endstops:   r.Fields["E"],
+		EStop:      r.Int("I", 0, 0) != 0,
+		Probe:      r.Int("P", 0, 0) != 0,
+		ToolSetter: r.Int("P", 1, 0) != 0,
+		RSSI:       r.Int("RSSI", 0, 0),
+		Raw:        r,
 	}
 	return d
 }
