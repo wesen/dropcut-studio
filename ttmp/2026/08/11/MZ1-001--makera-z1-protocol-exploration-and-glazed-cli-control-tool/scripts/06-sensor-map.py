@@ -102,6 +102,14 @@ def main():
     args = ap.parse_args()
     watch = set(args.keys.split(",")) if args.keys else None
 
+    # Line-buffer stdout. Without this, piping the output (or a terminal that
+    # block-buffers) shows nothing while the operator is triggering inputs,
+    # which defeats the entire point of a live differ.
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except AttributeError:
+        pass
+
     p = Probe(args.host, args.port)
     print(f"connected to {args.host}:{args.port}")
     print("polling diagnose" + (" and status" if args.status else "")
@@ -111,7 +119,10 @@ def main():
     seen = {}          # (report, key, index) -> set of observed values
     t0 = time.time()
     stop = {"now": False}
-    signal.signal(signal.SIGINT, lambda *a: stop.__setitem__("now", True))
+    # Handle SIGTERM as well as SIGINT so `timeout 60 ...` still prints the
+    # summary instead of dying silently mid-session.
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, lambda *a: stop.__setitem__("now", True))
 
     def handle(tag, report, prev, open_ch, close_ch):
         if report is None:
