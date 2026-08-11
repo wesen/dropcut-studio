@@ -32,8 +32,24 @@ var motionVerbs = map[string]bool{
 	"upload": true, "download": true, "rm": true, "mv": true, "mkdir": true,
 	"config-set": true, "config-default": true, "config-restore": true,
 	"load": true, "save": true, "set_temp": true, "switch": true,
-	"baud": true, "buffer": true, "time": true, "ap": true,
+	"baud": true, "buffer": true, "ap": true,
 }
+
+// writeWithArgs verbs are read-only in their bare form and mutate machine state
+// when given arguments: `time` reports the clock, `time <epoch>` sets it;
+// `wlan -e` lists networks, `wlan <ssid> <password>` joins one.
+//
+// `switch` follows the same shape — `switch <name>` queries and
+// `switch <name> <value>` actuates — but it is deliberately in the always-refuse
+// list above, because there the difference is one argument on a command that
+// drives real outputs, and a typo would actuate rather than fail.
+var writeWithArgs = map[string]bool{
+	"time": true,
+	"wlan": true,
+}
+
+// wlanReadOnlyArgs are the flag-only forms of `wlan` that merely list networks.
+var wlanReadOnlyArgs = map[string]bool{"-e": true}
 
 // motionPrefixes catch G-code, M-code and GRBL-style commands, which are not
 // separated from their arguments by a space (`G0X10`, `$J X1`).
@@ -57,14 +73,30 @@ func IsMotionCommand(cmd string) bool {
 	if trimmed == "" {
 		return false
 	}
-	verb := trimmed
-	if i := strings.IndexAny(trimmed, " \t"); i >= 0 {
-		verb = trimmed[:i]
-	}
+	parts := strings.Fields(trimmed)
+	verb := parts[0]
+	args := parts[1:]
+
 	if readOnlyExceptions[verb] {
 		return false
 	}
 	if motionVerbs[verb] {
+		return true
+	}
+	if writeWithArgs[verb] {
+		// Bare form is a query.
+		if len(args) == 0 {
+			return false
+		}
+		// `wlan -e` is still just a listing.
+		if verb == "wlan" {
+			for _, a := range args {
+				if !wlanReadOnlyArgs[a] {
+					return true
+				}
+			}
+			return false
+		}
 		return true
 	}
 	for _, p := range motionPrefixes {

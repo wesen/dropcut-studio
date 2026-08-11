@@ -28,6 +28,8 @@ func TestMotionCommandsAreRefused(t *testing.T) {
 		"switch light 1", "set_temp bed 100",
 		"time 1754937600", "baud 115200", "buffer M6T2",
 		"load", "save", "ap 6",
+		// wlan joins a network when given a ssid/password.
+		"wlan MyNetwork hunter2",
 	}
 	for _, cmd := range motion {
 		t.Run(cmd, func(t *testing.T) {
@@ -47,6 +49,8 @@ func TestReadOnlyCommandsAreAllowed(t *testing.T) {
 		"get wcs", "get state", "get pos", "get status",
 		"config-get sd foo",
 		"echo hello",
+		// Bare forms are queries; see writeWithArgs.
+		"time",
 		"wlan -e",
 	}
 	for _, cmd := range readOnly {

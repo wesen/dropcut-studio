@@ -127,7 +127,7 @@ func Dial(ctx context.Context, opts Options) (*Client, error) {
 	c.mu.Lock()
 	c.info.Protocol = name
 	c.mu.Unlock()
-	c.logger.Info().Str("protocol", name).Msg("connected")
+	c.logger.Debug().Str("protocol", name).Msg("connected")
 
 	runCtx, cancel := context.WithCancel(context.Background())
 	c.cancel = cancel
@@ -186,7 +186,7 @@ func (c *Client) readLoop(ctx context.Context) {
 		for _, m := range c.proto.Feed(buf[:n]) {
 			// A firmware announcement can switch the dialect mid-session.
 			if announced := ProtocolFromAnnouncement(m.Text); announced != "" && announced != c.proto.Name() {
-				c.logger.Info().Str("protocol", announced).Msg("switching protocol on announcement")
+				c.logger.Warn().Str("protocol", announced).Msg("switching protocol on announcement")
 				c.proto = NewProtocol(announced)
 			}
 			select {
