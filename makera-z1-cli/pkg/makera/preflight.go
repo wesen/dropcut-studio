@@ -149,11 +149,11 @@ func (c *Client) Preflight(ctx context.Context, class RiskClass, opts PreflightO
 	// gate — an absolute move on an unhomed machine answers "axis is not
 	// homed" (now surfaced in Replies), and `play` silently no-ops.
 	if opts.RequireHomed && st.AtRestPosition {
-		add("homed", false, false,
+		add("homing", false, false,
 			"position is -1,-1,-1 — parked at home OR never homed; stock firmware cannot say. "+
 				"If actually unhomed, absolute moves error and play silently does nothing — home first if unsure")
 	} else {
-		add("homed", true, false, pick(st.AtRestPosition,
+		add("homing", true, false, pick(st.AtRestPosition,
 			"at the -1,-1,-1 rest position (homing unknowable on stock firmware)",
 			"position has moved since boot or homing"))
 	}

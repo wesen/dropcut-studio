@@ -172,11 +172,9 @@ func writeErr(w http.ResponseWriter, err error) {
 type statusPayload struct {
 	Connected bool   `json:"connected"`
 	State     string `json:"state"`
-	// Homed is the legacy heuristic (position != -1,-1,-1) and is advisory:
-	// stock firmware never reports homing, and -1,-1,-1 is both the boot
-	// position and the post-homing rest position. AtRest carries the honest
-	// signal for the page's wording.
-	Homed   bool             `json:"homed"`
+	// AtRest: position reads -1,-1,-1, which is both the boot position and
+	// the post-homing rest position — stock firmware never reports homing,
+	// so "homed" is deliberately not a field here.
 	AtRest  bool             `json:"at_rest"`
 	Machine [5]float64       `json:"machine"`
 	Work    [5]float64       `json:"work"`
@@ -203,7 +201,6 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		out = statusPayload{
 			Connected: true,
 			State:     st.State,
-			Homed:     st.Homed,
 			Machine:   [5]float64{st.Machine.X, st.Machine.Y, st.Machine.Z, st.Machine.A, st.Machine.B},
 			Work:      [5]float64{st.Work.X, st.Work.Y, st.Work.Z, st.Work.A, st.Work.B},
 			Feed:      st.Feed,

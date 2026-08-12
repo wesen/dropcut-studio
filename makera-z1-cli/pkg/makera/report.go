@@ -174,12 +174,6 @@ type Status struct {
 	// is not homed", and `play` silently does nothing.
 	AtRestPosition bool
 
-	// Homed is the LEGACY heuristic (MPos != -1,-1,-1), kept for display.
-	// It is wrong in both directions — false for a homed machine parked at
-	// rest, true for an unhomed machine that jogged — and nothing may refuse
-	// motion based on it.
-	Homed bool
-
 	Raw *Report
 }
 
@@ -224,7 +218,6 @@ func InterpretStatus(r *Report) Status {
 		}
 	}
 	s.AtRestPosition = s.Machine.X == -1 && s.Machine.Y == -1 && s.Machine.Z == -1
-	s.Homed = !s.AtRestPosition
 	return s
 }
 

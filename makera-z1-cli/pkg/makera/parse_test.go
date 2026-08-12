@@ -34,7 +34,7 @@ func TestParseLiveStatusReport(t *testing.T) {
 	assert.False(t, s.CoordSystemKnown, "stock firmware does not report G:")
 
 	// Unhomed sentinel must be surfaced rather than reported as a position.
-	assert.False(t, s.Homed)
+	assert.True(t, s.AtRestPosition, "the -1,-1,-1 rest position (boot OR parked-after-homing)")
 
 	assert.Equal(t, 2, s.Tool)
 	assert.InDelta(t, 0.054, s.ToolLengthOffset, 1e-9)

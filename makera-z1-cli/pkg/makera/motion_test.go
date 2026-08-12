@@ -220,7 +220,7 @@ func TestPreflightHomingIsAdvisoryOnly(t *testing.T) {
 
 	warned := false
 	for _, ch := range rep.Checks {
-		if ch.Name == "homed" && !ch.OK && !ch.Fatal {
+		if ch.Name == "homing" && !ch.OK && !ch.Fatal {
 			warned = true
 			assert.Contains(t, ch.Detail, "cannot say")
 		}
