@@ -862,3 +862,57 @@ reports why it will not.
   standing suspect.
 - Record the resolution in MZ1-001 observations if it turns out to be
   another firmware behaviour worth ground-truthing.
+
+## Step 13: Step 12 resolved on hardware — the second `$H` homes
+
+The user re-ran the sequence with the new reply column. First `$H`: empty
+reply, instant `Idle`, unhomed — the same no-op. Second identical `$H` four
+seconds later: homing ran (state `Home`), and `get state` calls during the
+cycle caught the firmware's internal modal state — `G91 … F180`, the
+relative slow-seek moves — restored to `G90 … F2000` on completion. Two
+durable facts and one empirical rule came out of it, all recorded as
+MZ1-001 observations §12, and both lessons are now encoded in the tool.
+
+### Prompt Context
+
+**User prompt (verbatim):** (terminal transcript: status → get state → home --confirm ×2 → get state ×4, showing the first \$H no-op, the second homing, and G91/F180 mid-cycle)
+
+**Assistant interpretation:** The no-op is transient — residual state from
+the hold episode, consumed by the first `$H`.
+
+**Inferred user intent:** A home command that either homes or says why not.
+
+**Commit (code):** 572f96d — "home: detect the silent \$H no-op and watch the cycle to completion"
+
+### What I learned
+
+- Empirical rule: an instant `Idle` return from `$H` means it no-opped; send
+  it again. The dispatch source clears a latched halt flag before issuing
+  the cycle, consistent with the first `$H` being consumed by residual
+  hold-episode state, though the exact flag was not pinned.
+- The `-1,-1,-1` unhomed sentinel clears at homing START (the firmware
+  resets positions to 0 before seeking), so `homed` flips true immediately;
+  only `state == Home` says the cycle is still running, and `homed` is
+  trustworthy only after the state returns to `Idle`.
+- `get state` during `Home` describes the cycle's own modal state, not the
+  operator's.
+
+### What I did
+
+- `home --confirm` now refuses with "run it again" when `$H` no-ops (state
+  never `Home`, still unhomed), otherwise watches until the state leaves
+  `Home` (3-minute bound, re-reads only) and reports final homed +
+  machine coordinates. The web route returns the same no-op message; the
+  page's poll shows `Home` while the cycle runs.
+
+### What warrants a second pair of eyes
+
+- The no-op detection races homing start: if `$H` were slow to enter `Home`
+  (>~200 ms to the status read), a real cycle could be misreported as a
+  no-op. Observed starts were faster; if a false report ever appears, add
+  one short re-read before declaring the no-op.
+
+### What should be done in the future
+
+- Pin the exact residual flag someday if a firmware update changes the
+  behaviour; until then the rule is cheap and safe.
