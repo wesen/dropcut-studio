@@ -1,3 +1,8 @@
+## Licence
+
+z1ctl is licensed GPL-2.0. The licence covers every file in this directory tree;
+individual source files deliberately carry no per-file licence header.
+
 ## Attribution
 
 z1ctl speaks the Makera / Carvera machine protocol. The protocol was documented

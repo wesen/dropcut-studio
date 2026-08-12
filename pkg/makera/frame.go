@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
-//
 // Makera framed binary protocol codec.
 //
 // Written from the specification in ttmp MZ1-001 (docs/protocol.md), not ported

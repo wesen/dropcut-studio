@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
-
 // Package webui serves the hardware control page.
 //
 // The page is read-only telemetry. Motion controls are rendered but disabled,

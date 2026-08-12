@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
-//
 // z1ctl — command-line control for Makera Z1 and Carvera-family CNC machines.
 //
 // Copyright (C) 2026 the z1ctl authors.

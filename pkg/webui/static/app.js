@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 //
 // DROPCUT Control — hardware control page.
 //

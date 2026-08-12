@@ -90,13 +90,18 @@ directive pointing at the sibling checkout.
 
 ## Licence
 
-GPL-2.0. See `LICENSE`, and `NOTICE` for attribution to the projects this
+**GPL-2.0.** The licence applies to every file in this directory tree. See
+`LICENSE` for the full text and `NOTICE` for attribution to the projects this
 protocol documentation was derived from.
 
-**Open sub-decision:** the headers currently say `GPL-2.0-only`. Switching to
-`GPL-2.0-or-later` costs nothing today and would allow combining with GPL-3.0
-code later (including the OEM controller). It should be settled before there are
-outside contributors.
+Individual source files deliberately carry **no per-file licence header**. The
+licence is stated here, in `LICENSE`, and in `NOTICE`; repeating it at the top of
+every file adds noise without adding information. Contributors should not add
+SPDX headers.
+
+One consequence to keep in mind: `MakeraInc/CarveraController` is GPL-**3.0**,
+which is incompatible with GPL-2.0-only, so no code from it may be incorporated.
+It remains usable as a factual reference, which is all it has been used for.
 
 Because this is GPL, anything that links `pkg/makera` is a derivative work and
 must also be GPL. A permissively licensed or proprietary user interface should
