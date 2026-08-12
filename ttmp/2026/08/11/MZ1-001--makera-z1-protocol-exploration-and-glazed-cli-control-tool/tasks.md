@@ -59,10 +59,11 @@
 - [ ] Bulk-listing reassembly (`LOAD_INFO` → `LOAD_FINISH`)
 - [ ] MD5 policy per ADR-007 (32 **hex** chars, not 32 chars)
 - [x] Command: `fs get` (download)
-- [ ] Commands: `fs put|rm|mv|mkdir`, `config dump|get|set`
+- [x] Commands: `fs put|rm|mv|mkdir` — full cycle verified on hardware in a scratch directory
+- [ ] Commands: `config dump|get|set`
 - [ ] Commands: `job play|pause|resume|abort|progress|run`, `gcode`, `realtime`
 - [x] `fakemachine` test double covering out-of-order blocks, FILE_RETRY, cancel-as-success, the Z1 MD5 placeholder and QuickLZ detection (11 tests)
-- [ ] **Upload against hardware** — implemented and fake-tested, never run on a real machine. First run must be a scratch path with an operator present
+- [x] **Upload against hardware** — verified 2026-08-11 with operator authorisation: 173 B upload, digest read back, downloaded round-trip byte-identical
 
 ## TODO — Phase 4: USB and polish
 

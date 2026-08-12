@@ -355,6 +355,40 @@ digests on the SD card.
 
 ---
 
+### 5.1 Filesystem writes — verified end to end
+
+A full create/upload/download/rename/delete cycle was run on 2026-08-11 inside a
+scratch directory, leaving the machine byte-for-byte as it was found.
+
+| Operation | Result |
+|---|---|
+| `mkdir /sd/gcodes/z1ctl-test` | works — **though `mkdir` is absent from the firmware's own `help`** |
+| `upload` 173 B, one block | works; digest read back matched |
+| `download` of that file | byte-identical to the original |
+| `mv` within the directory | works; empty reply |
+| `rm` the file | works; empty reply |
+| `rm` the **directory** | works — `rm` removes an empty directory, no separate `rmdir` needed |
+
+Three behaviours worth knowing:
+
+1. **The firmware answers nothing on success.** An empty reply is the good case,
+   which means "no reply" cannot distinguish success from a command that was
+   silently ignored. Every mutation must be verified by re-listing.
+
+2. **Changes are not immediately visible in a listing.** A directory created by
+   `mkdir` is genuinely absent from the very next `ls` and appears a moment
+   later. Verifying immediately reports a spurious failure for an operation that
+   worked — this cost a debugging cycle. Poll for up to a few seconds.
+
+3. **`mkdir` on an existing directory returns `LOAD_ERROR` (`0x85`)**, so
+   "already exists" is detectable, and a bulk-load error is how this firmware
+   signals a failed filesystem command.
+
+A corroboration of §2.4: the uploaded file's timestamp came back as
+`19800101044254` — the FAT epoch — because the machine's clock was never set.
+
+---
+
 ## 6. `md5sum` — a real digest, and no separator
 
 ```
