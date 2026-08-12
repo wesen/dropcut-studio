@@ -484,3 +484,52 @@ behaviour, gating reasons, zero JS errors.
 - Screenshots from the browser smoke test:
   `../../dropcut-control-disconnected.png`, `dropcut-control-v2.png`
   (workspace root).
+
+## Step 6: Connection settings from the environment, the framework way
+
+The user asked whether the machine address could be passed manually because
+discovery is slow, then steered the solution: no device cache — use glazed's
+env middleware instead. `parserOptions` now supplies a custom chain that adds
+`FromEnv("Z1CTL")` wrapped in `WrapWithWhitelistedSections([connection])`, so
+`Z1CTL_DEVICE` and the other connection knobs load uniformly from the
+environment while nothing else does.
+
+### Prompt Context
+
+**User prompt (verbatim):** "can we pass the ip address of the server manually? do we keep track of it with z1ctl serve? because discovery is slow" — then "like as environment variable using glaed framework env middleware or so? (see `glaze help --all` if necessary)" — then "wait we don't need the cache, env variable is fine"
+
+**Assistant interpretation:** Kill the 3-second discovery sweep for repeat use;
+prefer the framework's env loading over bespoke mechanisms; drop the
+half-built device cache.
+
+**Inferred user intent:** One idiomatic mechanism, less code.
+
+**Commit (code):** 3defae2 — "Load connection settings from the environment via glazed, whitelisted"
+
+### What I did
+
+- Replaced the hand-rolled `os.Getenv("Z1CTL_DEVICE")` with the built-in env
+  source (`root.go:z1ctlMiddlewares`); deleted the device cache mid-flight on
+  the user's call.
+
+### Why / What was tricky to build
+
+- The built-in chain (`AppName`) env-loads EVERY section, which would have made
+  `Z1CTL_CONFIRM=true` in a shell profile silently satisfy `--confirm` on
+  motion commands. The whitelist wrapper closes that: env applies to the
+  connection section only, structurally.
+
+### What worked
+
+- Verified empirically: `Z1CTL_DEVICE=10.9.8.7 z1ctl status` dials 10.9.8.7
+  with no sweep; `Z1CTL_CONFIRM=true z1ctl jog X 1 --device …` still exits 2.
+
+### What warrants a second pair of eyes
+
+- If a future section ever needs env loading, it must be ADDED to the
+  whitelist deliberately — the comment on `z1ctlMiddlewares` says why the
+  default section never goes in.
+
+### Code review instructions
+
+- `cmd/z1ctl/cmds/root.go` (`z1ctlMiddlewares`), `connection.go` (`Resolve`).
