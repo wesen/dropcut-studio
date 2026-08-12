@@ -20,6 +20,11 @@ import (
 //	Resume    Class 2 — restarts motion that was deliberately stopped
 //	Progress  read-only
 
+// ErrJobEndedInAlarm marks a supervised job that ended in a machine alarm.
+// Callers map it to exit code 3; nothing in this codebase reacts to it by
+// clearing the alarm, because a machine that halted has a physical cause.
+var ErrJobEndedInAlarm = errors.New("job ended in alarm")
+
 // Suspend pauses a running job. Class 0: it only stops things, so it runs in
 // any machine state with no preflight — a stop that can be refused is not a
 // stop.

@@ -55,11 +55,21 @@ func Register(root *cobra.Command) error {
 		return err
 	}
 
-	if err := cli.AddCommandsToRootCommand(root,
-		[]cmds.Command{discover, status, watch, exec, info, doctor, serve, unlock}, nil,
-		parserOptions()...); err != nil {
+	motion, err := NewMotionCommands()
+	if err != nil {
+		return errors.Wrap(err, "build motion commands")
+	}
+
+	top := append([]cmds.Command{discover, status, watch, exec, info, doctor, serve, unlock}, motion...)
+	if err := cli.AddCommandsToRootCommand(root, top, nil, parserOptions()...); err != nil {
 		return errors.Wrap(err, "register top-level commands")
 	}
+
+	jobGroup, err := NewJobGroup()
+	if err != nil {
+		return errors.Wrap(err, "build job group")
+	}
+	root.AddCommand(jobGroup)
 
 	fsGroup, err := NewFsGroup()
 	if err != nil {

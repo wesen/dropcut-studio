@@ -9,6 +9,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/go-go-golems/makera-z1-cli/cmd/z1ctl/cmds"
+	"github.com/go-go-golems/makera-z1-cli/pkg/makera"
 )
 
 var version = "dev"
@@ -38,9 +40,12 @@ real-time feeder.
 Every read-oriented command emits structured rows, so --format json or jsonl
 makes the output directly consumable by scripts and by the web interface.
 
-SAFETY: commands that could move the machine, start or stop a job, or mutate its
-filesystem are refused before a byte reaches the socket. Motion is not
-implemented in this build.
+SAFETY: free-text commands that could move the machine or mutate its state are
+refused before a byte reaches the socket. Motion exists only behind dedicated
+commands (jog, goto, home, park, spindle, job) that render their own G-code
+from validated parameters, preflight the machine fresh, require --confirm, and
+never retry. Stops — hold, job suspend, job abort, spindle off — are NEVER
+gated. The machine's physical emergency stop is the real one.
 
 Getting started:
   z1ctl discover                      find machines on the network (passive)
@@ -87,8 +92,16 @@ docs/observations-z1-1.0.15.md.`,
 }
 
 // exitCodeFor maps errors onto meaningful exit codes so scripts can gate on
-// them: 1 usage or connection error, 2 machine refused the request.
+// them: 1 usage or connection error, 2 refused (guard or preflight),
+// 3 a supervised job ended in alarm.
 func exitCodeFor(err error) int {
+	switch {
+	case errors.Is(err, makera.ErrJobEndedInAlarm):
+		return 3
+	case errors.Is(err, makera.ErrPreflightFailed),
+		errors.Is(err, makera.ErrMotionNotAuthorised):
+		return 2
+	}
 	msg := err.Error()
 	switch {
 	case containsAny(msg, "not authorised", "refusing"):
