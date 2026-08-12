@@ -11,14 +11,25 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
-    - Path: repo://dropcut-studio/ttmp/2026/08/11/MZ1-003--motion-and-job-control-with-a-manual-control-ui/analysis/01-implementation-review-the-client-the-cli-and-the-mz1-003-design.md
+    - Path: repo://ttmp/2026/08/11/MZ1-003--motion-and-job-control-with-a-manual-control-ui/analysis/01-implementation-review-the-client-the-cli-and-the-mz1-003-design.md
       Note: Step 1's deliverable — the pre-implementation review whose amendments drive the code
+    - Path: repo://makera-z1-cli/cmd/z1ctl/cmds/motionrun.go
+      Note: The one CLI path to motion (Step 4, commit 48255aa)
+    - Path: repo://makera-z1-cli/pkg/makera/motion.go
+      Note: Typed ops, Motion, JogSession incl. manual keepalive mode (Steps 2-3)
+    - Path: repo://makera-z1-cli/pkg/makera/preflight.go
+      Note: The $11.1 preflight (Step 2)
+    - Path: repo://makera-z1-cli/pkg/makera/safety.go
+      Note: Risk classes and Classify (Step 2, commit 3507195)
+    - Path: repo://makera-z1-cli/pkg/webui/motion.go
+      Note: Guarded mutation surface and 1:1 jog forwarding (Step 5, commit 9c6db2b)
 ExternalSources: []
 Summary: Chronological implementation diary for MZ1-003 — motion and job control with a manual control UI.
 LastUpdated: 2026-08-11T23:59:00-04:00
 WhatFor: Recording each implementation step, its failures and its open questions, so review and continuation need no terminal history.
 WhenToUse: Read before resuming work on MZ1-003; update after every substantive step.
 ---
+
 
 # Diary
 
@@ -143,3 +154,333 @@ review's corrections applied rather than merely filed.
 - Review doc: `analysis/01-implementation-review-the-client-the-cli-and-the-mz1-003-design.md`.
 - Repo state at review time: `dropcut-studio` @ `c200fed`, uncommitted
   `makera-z1-cli/go.mod` replace-path fix from the repo merge.
+
+## Step 2: Motion core — risk classes, typed ops, preflight, dead-man session
+
+The safety layer went first, before any command that could use it. The single
+`motionVerbs` predicate became `Classify(cmd) RiskClass` with six ordered
+classes, and — the deliberate behaviour change — stops became ungated
+everywhere: `suspend`, `abort`, bare `!`, `M5` and `M9` now pass every path,
+and the realtime guard admits `!` and `0x19`. Motion became typed
+`MotionOp` constructors (review amendment A) gated by the maximum class over
+a request (amendment B), with a fresh preflight implementing the design's
+§11.1 table.
+
+Continuous jog landed as `JogSession`: a 200 ms `?`+`0x1A` keepalive in one
+write, the `0x19`/`^Y` stop handshake with keepalives suppressed first, and
+the dead-man proven in tests — the fake machine expires a jog whose
+keepalives cease, which is the one property a real machine cannot be asked
+to demonstrate.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Phase 1 of the implementation proper.
+
+**Inferred user intent:** The safety architecture in code, testable offline.
+
+**Commit (code):** 3507195 — "Motion core: risk classes, typed ops, preflight, jog dead-man session"
+
+### What I did
+
+- Rewrote `pkg/makera/safety.go` around `RiskClass` and `Classify`; updated
+  `safety_test.go` to pin the new boundaries, including
+  `TestStopsAreNeverRefused`.
+- Added `motion.go` (ops, `MotionRequest`, `DryRun`, `Client.Motion`,
+  `JogSession`), `preflight.go`, `jobctl.go`.
+- Fixed the review's §6.1–6.3 findings in `client.go`: a command mutex
+  serialising every drain→write→collect exchange (realtime bypasses it), an
+  overflow policy that never drops a completion sentinel, and
+  `awaitReport` parsing candidates instead of pattern-matching `<`.
+- Extended the fake machine with the control path: status/diagnose replies,
+  scripted alarm and playing states, jog tracking with a dead-man window,
+  the `^Y` handshake, and canned echo replies.
+- 28 new tests; all pass under `-race` on the first full run.
+
+### Why
+
+- The jog keepalive makes client concurrency load-bearing (three actors on
+  one connection), so the mutex had to precede the feature that needs it.
+
+### What worked
+
+- The typed-op design fell together cleanly: `render`/`class`/`requiresHomed`
+  unexported, constructors validating before any connection exists, dry-run
+  as a pure function over the same rendering.
+
+### What didn't work
+
+- First version of `TestDeliverNeverDropsTheSentinel` asserted the sentinel
+  stayed at the HEAD of the channel; the fix re-queues it at the tail, so
+  the assertion had to scan. Ordering after an overflow rescue is
+  documented as best-effort.
+
+### What I learned
+
+- Upstream encodes continuous jog direction as a signed 1 (`$J -c X-1`),
+  confirmed in the pendant add-on (`pendant.py:518`), not as a bare sign.
+- The firmware also emits "Stop request timeout" / "Internal stop request
+  reset" lines that clear jog state — the read loop treats them as
+  ack-equivalent.
+
+### What was tricky to build
+
+- The stop handshake ordering: keepalives must be provably gone before
+  `0x19` goes out (cancel + wait on the emitter's done channel), and the ack
+  channel must be registered before the stop byte or the `^Y` can land in
+  the gap. Ack detection lives in the read loop so the waiter never
+  competes with a command exchange for messages.
+
+### What warrants a second pair of eyes
+
+- `M5`/`M9` as Class 0 deviates from the design's table (which filed M5
+  under the spindle's Class 1 row) on the principle that a stop that can be
+  refused is not a stop. Flagged for the operator safety review.
+- The sanity bounds in `motion.go` (1000 mm jog, 10000 mm/min, 20000 rpm)
+  are unit-mistake catches, not an envelope model; the firmware owns limits.
+
+### What should be done in the future
+
+- Hardware bring-up per design §14.4, operator present.
+
+### Code review instructions
+
+- Start at `pkg/makera/safety.go` (`Classify`) and `motion.go`
+  (`JogSession.stop`). Validate with
+  `go test ./pkg/makera/ -count=1 -race`.
+
+### Technical details
+
+- Dead-man test: `TestJogDeadman` abandons the session (as a crash would)
+  and asserts the fake's jog expires with no stop byte sent.
+
+## Step 3: The keepalive design reversed — the held button drives the chain
+
+The user reviewed the jog keepalive design mid-implementation and overruled
+ADR-011/the review's lease amendment: *"I don't think the server should hold
+the jog state, isn't the jog to be there exactly to have a human hold a
+button and control and fail safe?"* — followed by *"it would also reduce a
+lot of the complexity on the server side, with its jog holding loop."*
+
+They are right, and the argument generalises: a server timer that keeps
+motion alive is a mechanism whose bugs fail toward CONTINUING; a server that
+only forwards keepalives 1:1 has no such mechanism, so every bug fails
+toward stopping. That is the correct asymmetry for a dead-man, and it
+deleted the lease, the watchdog and the server-side timer in one stroke.
+
+### Prompt Context
+
+**User prompt (verbatim):** "I don't think the server should hold the jog state, isn't the jog to be there exactly to have a human hold a button and control and fail safe?"
+
+**Assistant interpretation:** Challenge to the server-owned keepalive (ADR-011
+and review §7.3): the human's held button should be the liveness source.
+
+**Inferred user intent:** Keep the dead-man chain anchored to the operator's
+finger; simplify the server.
+
+**Commit (code):** 9d50f54 — "Jog keepalives forward 1:1; the held button is the dead-man end to end"
+
+### What I did
+
+- Added `JogStartManual` + `JogSession.Keepalive()` (one call, one `?`+`0x1A`
+  write; refused once a stop begins); the CLI keeps the timer variant since
+  there the process itself is the held button.
+- Revised review §7.3 in place with the operator's argument and kept the
+  lease text below it as the road not taken.
+- Test: `TestManualJogForwardsKeepalivesOneToOne` — exactly N writes for N
+  calls, dead-man on cessation with no server involvement, keepalive refused
+  after stop.
+
+### Why
+
+- Failure asymmetry: forwarding fails safe by construction; a lease fails
+  safe only if its expiry logic is correct.
+
+### What worked / What didn't work
+
+- Clean refactor; nothing failed. The web server later needed no jog loop at
+  all — start, forward, stop, three handlers.
+
+### What I learned
+
+- The browser cannot reach the machine anyway (single TCP connection held by
+  the server), so "browser owns the keepalive" costs one HTTP POST per
+  keepalive and nothing else. Background-tab throttling stalls the POSTs,
+  which stops the axis: annoying, safe, honest.
+
+### What was tricky to build
+
+- Nothing mechanical; the tricky part was noticing the original design was
+  optimising timing robustness at the expense of failure direction.
+
+### What warrants a second pair of eyes
+
+- The 150 ms browser POST cadence against the firmware's (unmeasured)
+  keepalive window — bring-up step 7 observes it on hardware.
+
+### What should be done in the future
+
+- N/A beyond bring-up.
+
+### Code review instructions
+
+- `pkg/makera/motion.go` (`JogStartManual`, `Keepalive`), review §7.3.
+
+## Step 4: The CLI — every motion command through one auditable runner
+
+Phases 2 and 3 in one pass: `jog` (step and bounded continuous), `home`,
+`goto`, `park`, `spindle`, `accessory`, `hold`, `preflight`, and the `job`
+group with the fail-closed `run` composite. One shared runner
+(`cmd/z1ctl/cmds/motionrun.go`) implements the uniform flow — `--dry-run`
+renders commands and frames without opening a connection, `--confirm` gates
+state-enabling and above, execution goes through `Client.Motion` — so a
+reviewer audits one function instead of eight commands.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** The CLI surface from design §16 Phases 2–3.
+
+**Inferred user intent:** Operable motion commands, offline-verified, hardware
+bring-up deferred.
+
+**Commit (code):** 48255aa — "CLI: jog, home, goto, park, spindle, accessory, hold, preflight, job group"
+
+### What I did
+
+- Nine new commands; `main.go` exit codes 0/1/2/3 mapped from typed errors
+  (`ErrPreflightFailed`, `ErrMotionNotAuthorised`, new `ErrJobEndedInAlarm`).
+- Smoke-tested dry runs: `jog X 10 --feed 600 --dry-run` prints
+  `$J X10 F600` with the exact frame bytes; an unconfirmed jog refuses with
+  exit 2.
+
+### Why
+
+- The design's §14.3: dry run is how understanding is checked before the
+  machine is involved.
+
+### What worked
+
+- Frame length in the dry-run output (`00 0e` for an 11-byte payload)
+  matches the LENGTH = 1 + payload + 2 rule from MZ1-001 — a nice cross-check
+  that rendering goes through the same `BuildFrame` as the live path.
+
+### What didn't work
+
+- N/A — this layer is thin by design.
+
+### What was tricky to build
+
+- `goto`'s axis flags: `--x 0` is indistinguishable from an unset flag, so
+  each axis has an explicit `--x-set` presence flag. Ugly but honest;
+  a positional syntax can replace it later.
+
+### What warrants a second pair of eyes
+
+- CLI continuous jog exists at all (`--continuous --for ≤5s`). It is
+  bounded and confirmatory, but the web page is the right tool; if the
+  operator thinks the CLI form invites misuse, delete it.
+
+### What should be done in the future
+
+- Bring-up; `wcs zero` remains marked unverified pending the G10 L20 open
+  question.
+
+### Code review instructions
+
+- `cmd/z1ctl/cmds/motionrun.go` first, then `job.go`'s `run` composite.
+- `go run ./cmd/z1ctl <cmd> --dry-run` for any motion command.
+
+## Step 5: The control page grows hands — and a guarded server
+
+Phase 4: the read-only page became the pendant. Server side, fourteen POST
+routes behind one `guardMutation` (Host validation against DNS rebinding,
+same-origin, token when remote), single-flight motion with 409 on overlap,
+fresh preflight on every motion route, and `serve` now binds loopback by
+default with `--allow-remote` as the deliberate exception (ADR-012 plus the
+review's Host-check addition — unit-tested without hardware). Jog is three
+trivial handlers: start, forward-one-keepalive, stop.
+
+Page side: press-and-hold jog bound to pointerup/cancel/leave/blur/
+visibilitychange, FEED HOLD never disabled and bound to Escape, two-step
+arm-to-fire on HOME/PLAY/RESUME/zero/spindle-start (not a dialog — dialogs
+train dismissal), disabled controls always carrying their reason, and the
+footer stating plainly that the physical e-stop is the real one. Verified in
+a real browser against an unreachable device: correct disconnected
+behaviour, gating reasons, zero JS errors.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1; keepalive revision in Step 3)
+
+**Assistant interpretation:** Design §12–13 with the review amendments.
+
+**Inferred user intent:** The safer test harness for the hardware bring-up.
+
+**Commit (code):** 9c6db2b — "Manual control page: jog pendant, job control, guarded mutation surface"
+
+### What I did
+
+- `pkg/webui/motion.go` (guards + handlers), `webui.go` (routes, jog
+  bookkeeping cleared on session drop — review §6.5), `serve.go` (ADR-012),
+  full rewrite of `static/` assets, `webui_test.go` for the guards.
+- Playwright smoke test; fixed the jog pad grid (X+ had landed under Z+
+  instead of forming the XY cross).
+- Fixed a mislabelled dial error the user caught during the smoke test:
+  every dial failure claimed "machine busy"; now only `ECONNREFUSED`
+  suggests it, phrased as likely (`transport.go`).
+
+### Why
+
+- Once the page can move the machine, an unauthenticated POST from the LAN
+  IS a motion command; the server had to grow its security posture in the
+  same commit as its first mutating route.
+
+### What worked
+
+- The 1:1 keepalive design made the server's jog surface almost stateless —
+  the entire "jog holding loop" the original design needed simply does not
+  exist.
+
+### What didn't work
+
+- First screenshot showed the jog pad misaligned (grid-area layout bug);
+  fixed and re-verified.
+- A `find /` while locating the screenshot annoyed the user, rightly. The
+  playwright plugin writes to the workspace root.
+
+### What was tricky to build
+
+- The gating split: machine-state gates (jog disabled while a job runs)
+  versus HTTP-security gates (token, origin). Stops skip the former and
+  keep the latter — authentication is not gating.
+
+### What warrants a second pair of eyes
+
+- `guardMutation`'s origin check accepts requests with no Origin header
+  (curl and same-origin GET-form navigations do not send one); the token
+  covers the remote case, but a security review should confirm the
+  loopback-trust posture.
+- The unlock route reimplements the CLI unlock's preflight checks; the two
+  should not drift.
+
+### What should be done in the future
+
+- Hardware bring-up §14.4, including deliberately killing the tab mid-jog
+  (step 7) with an operator at the machine.
+- WCS panel currently zeroes G54 only; system selection is a follow-up.
+
+### Code review instructions
+
+- `pkg/webui/motion.go` top comment, then `guardMutation`, then the jog
+  handlers. `go test ./pkg/webui/ -count=1`. For the page,
+  `z1ctl serve --device <ip>` and read `static/app.js`'s header comment
+  first.
+
+### Technical details
+
+- Screenshots from the browser smoke test:
+  `../../dropcut-control-disconnected.png`, `dropcut-control-v2.png`
+  (workspace root).

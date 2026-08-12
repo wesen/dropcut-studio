@@ -44,3 +44,12 @@ Pre-implementation review: graded MZ1-001/002 work, found the Client command-ser
 
 - /home/manuel/workspaces/2026-08-11/cnc-control-dropcut/dropcut-studio/ttmp/2026/08/11/MZ1-003--motion-and-job-control-with-a-manual-control-ui/analysis/01-implementation-review-the-client-the-cli-and-the-mz1-003-design.md — The review
 
+
+## 2026-08-11
+
+Implemented Phases 1-4: risk-class safety core with typed MotionOps and preflight (3507195), 1:1 browser-held jog keepalives after operator overruled the lease design (9d50f54), full motion/job CLI with dry-run and exit codes (48255aa), manual control page with guarded mutation surface, loopback default and DNS-rebinding defence (9c6db2b). Hardware bring-up deliberately not run.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-08-11/cnc-control-dropcut/dropcut-studio/makera-z1-cli/pkg/makera/motion.go — The authorised path
+

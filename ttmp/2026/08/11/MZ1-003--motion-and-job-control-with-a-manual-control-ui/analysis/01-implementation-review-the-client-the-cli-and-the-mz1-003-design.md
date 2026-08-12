@@ -13,13 +13,13 @@ DocType: analysis
 Intent: long-term
 Owners: []
 RelatedFiles:
-    - Path: repo://dropcut-studio/makera-z1-cli/pkg/makera/client.go
+    - Path: repo://makera-z1-cli/pkg/makera/client.go
       Note: The session core reviewed in §4 and §6.1 — the command serialisation gap lives here
-    - Path: repo://dropcut-studio/makera-z1-cli/pkg/makera/safety.go
+    - Path: repo://makera-z1-cli/pkg/makera/safety.go
       Note: The predicate guard reviewed in §5.2, replaced by the classification table
-    - Path: repo://dropcut-studio/makera-z1-cli/pkg/webui/webui.go
+    - Path: repo://makera-z1-cli/pkg/webui/webui.go
       Note: The read-only server reviewed in §4.4 — its drop-on-error policy interacts with jog state
-    - Path: repo://dropcut-studio/ttmp/2026/08/11/MZ1-003--motion-and-job-control-with-a-manual-control-ui/design/01-motion-and-job-control-analysis-design-and-implementation-guide.md
+    - Path: repo://ttmp/2026/08/11/MZ1-003--motion-and-job-control-with-a-manual-control-ui/design/01-motion-and-job-control-analysis-design-and-implementation-guide.md
       Note: The design under review in §7
 ExternalSources: []
 Summary: 'A full review of the z1ctl codebase and the MZ1-003 motion design before implementation: what the existing architecture gets right, six concrete defects and gaps found in review, three places where the design as written should be amended (typed motion requests, classifier-owned risk classes, a lease-based jog keepalive), and the adjusted API that implementation will follow.'

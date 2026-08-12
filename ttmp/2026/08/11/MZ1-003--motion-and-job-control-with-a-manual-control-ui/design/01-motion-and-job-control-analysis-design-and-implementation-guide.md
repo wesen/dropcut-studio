@@ -14,13 +14,13 @@ DocType: design
 Intent: long-term
 Owners: []
 RelatedFiles:
-    - Path: repo://dropcut-studio/makera-z1-cli/cmd/z1ctl/cmds/unlock.go
+    - Path: repo://makera-z1-cli/cmd/z1ctl/cmds/unlock.go
       Note: The authorised-path template this ticket generalises
-    - Path: repo://dropcut-studio/makera-z1-cli/pkg/makera/fakemachine_test.go
+    - Path: repo://makera-z1-cli/pkg/makera/fakemachine_test.go
       Note: Test double to extend for jog keepalive and state sequences
-    - Path: repo://dropcut-studio/makera-z1-cli/pkg/makera/halt.go
+    - Path: repo://makera-z1-cli/pkg/makera/halt.go
       Note: Halt reason table and recovery bands used by job halt handling
-    - Path: repo://dropcut-studio/makera-z1-cli/pkg/makera/safety.go
+    - Path: repo://makera-z1-cli/pkg/makera/safety.go
       Note: Current single-predicate guard that the four-class table replaces
 ExternalSources: []
 Summary: 'Complete intern-facing design for adding motion and job control to z1ctl, together with a manual control UI (pendant): the four risk classes, the authorised-path architecture, jogging and its dead-man keepalive, job lifecycle and halt handling, the UI''s safety affordances, and a bring-up sequence that starts with an air cut.'
