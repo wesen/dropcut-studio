@@ -27,7 +27,7 @@ WhenToUse: Whenever implementing a parser for any Z1 response. This document out
 
 **Machine:** `Makera_Z1_012146` at `192.168.0.55:2222`
 **Captured:** 2026-08-11, read-only session via `scripts/05-probe.py`
-**Machine state:** powered on, **not homed** (`MPos: -1,-1,-1`), tool 2 loaded, idle
+**Machine state:** powered on, `MPos: -1,-1,-1`, tool 2 loaded, idle. (Originally recorded as "not homed" — see §12: that position is ambiguous and homing is not reported by stock firmware.)
 
 > **Precedence.** `reference/02-makera-wire-protocol-reference.md` was derived
 > entirely from upstream source. This document was captured from hardware.
@@ -194,7 +194,7 @@ The generic "decode to `map[string][]float64` first, interpret second" design
 (design guide §8.1) is fully vindicated: `E:` and `OTA:` come through as data
 rather than as parse errors.
 
-`MPos: -1,-1,-1` is the **unhomed** sentinel — the machine had not been homed.
+`MPos: -1,-1,-1` was originally recorded here as the **unhomed sentinel**. **CORRECTED in §12:** it is also the post-homing rest position, and stock firmware never reports homing — the position is ambiguous.
 Worth surfacing in `z1ctl status` as an explicit `homed: false` rather than
 printing a position that looks real.
 
@@ -637,33 +637,40 @@ dialect (a `c` in the version string marks community) before sending:
 `--feed <mm/min>` renders `F<mm/min>` on community and is REFUSED on stock,
 which cannot express it.
 
-## 12. Homing: the first `$H` after a hold episode may silently no-op
+## 12. Homing and the `-1,-1,-1` position — two corrections
 
-Observed 2026-08-12, machine unhomed after a feed-hold/release episode:
+This section replaces its own first draft, which claimed a "silent `$H`
+no-op" and treated `-1,-1,-1` as an unhomed sentinel. Further hardware
+observation (2026-08-12) falsified both.
 
-- First `$H`: accepted (`ok`), returned immediately, state `Idle`, still
-  unhomed, no motion. No explanatory reply reached the wifi stream.
-- Second `$H`, four seconds later, identical command: homing ran normally
-  (state `Home` for the duration).
+**Correction 1: `MPos -1,-1,-1` is ambiguous, and homing is unreported.**
+A homing cycle watched to completion left the machine at `MPos -1,-1,-1` —
+the machine parks about 1mm off the max switches after homing. The same
+values appear on a freshly booted machine. The stock firmware source
+(`Kernel.cpp` report builder) confirms the status report carries NO homed
+flag anywhere: `Robot::is_homed` is internal and never serialised. Therefore:
 
-The dispatch source clears a latched halt flag before issuing the homing
-cycle (`case 'H': if(is_halted) clear; then G28.2`), and the homing loop
-itself bails when halted — consistent with the first `$H` being consumed
-clearing residual state from the hold episode, though the exact flag was not
-pinned. **Empirical rule: an instant `Idle` return from `$H` means it
-no-opped; send it again.**
+- `-1,-1,-1` means "at the rest position" — never homed OR freshly homed.
+- Any position means nothing either: an unhomed machine jogs too.
+- Homing is UNKNOWABLE from the wire on stock firmware. The firmware itself
+  is the gate: an absolute move on an unhomed machine answers
+  "`<axis> axis is not homed`" (Robot.cpp soft-endstop check), and `play`
+  silently returns (§ play notes).
 
-Two more facts captured live during the successful cycle:
+**Correction 2: the "silent `$H` no-op" was (at least partly) observability
+lag.** `$H` prints `ok` immediately; the `Home` state appears in status only
+after a lag (conveyor pickup), which a single status read ~200ms after send
+misses. Sequences that looked like "first $H ignored, second worked" are
+consistent with the FIRST $H's cycle becoming visible by the time the second
+command ran. A genuine consumed-$H path exists in the dispatch source
+(`case 'H': if(is_halted) clear-halt` before issuing the cycle), so "run it
+again" remains sound advice when nothing visibly happens — but no instant
+status read can distinguish the cases. Poll for the `Home` state; only its
+appearance proves a cycle, and only its return to `Idle` ends one.
 
-- `get state` mid-homing shows the cycle's internal modal state —
-  `G91 … F180` (relative moves at the slow seek rate) — restored to
-  `G90 … F2000` on completion. `get state` during `Home` describes the
-  cycle, not the operator's modal state.
-- The `-1,-1,-1` unhomed sentinel disappears at homing START, because the
-  firmware resets axis positions to 0 before seeking. A client's
-  "homed" inference from `MPos != -1,-1,-1` therefore flips true the moment
-  the cycle begins; `state == "Home"` is the still-running signal, and
-  "homed" is only trustworthy once the state has returned to `Idle`.
+Also decoded from source while investigating (`Kernel.cpp:484`): the status
+report's `C:` key is `MachineModel,FuncSetting,inch_mode,absolute_mode` —
+`C:3,1,0,1` = Z1, func 1, mm, absolute. Not homing-related.
 
 ## 13. Reproducing this session
 

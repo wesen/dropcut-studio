@@ -78,21 +78,26 @@ func (c *HomeCommand) RunIntoGlazeProcessor(
 		return err
 	}
 
-	// The firmware prints ok to $H unconditionally, and the first $H after a
-	// hold episode can be silently consumed clearing residual state
-	// (observed on hardware 2026-08-12; MZ1-001 observations §12). Detect
-	// the no-op instead of reporting success that did not happen.
-	if res.StateAfter.State != "Home" && !res.StateAfter.Homed {
-		return errors.Errorf(
-			"homing did not start: the machine accepted $H and did nothing (state %s, still unhomed). "+
-				"Known firmware behaviour after a hold episode — run `z1ctl home --confirm` again",
-			res.StateAfter.State)
+	// The firmware prints ok to $H unconditionally and the Home state appears
+	// with a LAG — reading status once, immediately, misreported a real cycle
+	// as a no-op on hardware (observations §12, corrected). Poll for the
+	// state; re-reads only, nothing is ever re-sent.
+	st := res.StateAfter
+	cycleObserved := st.State == "Home"
+	watchUntil := time.Now().Add(6 * time.Second)
+	for !cycleObserved && time.Now().Before(watchUntil) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(300 * time.Millisecond):
+		}
+		if st, err = client.QueryStatus(ctx); err != nil {
+			return errors.Wrap(err, "lost the machine after sending $H")
+		}
+		cycleObserved = st.State == "Home"
 	}
 
-	// Homing runs for tens of seconds and the unhomed sentinel clears at the
-	// START of the cycle, so "homed" is only trustworthy once the state has
-	// left Home. Watch it finish; re-reads only.
-	st := res.StateAfter
+	// Watch an observed cycle to completion.
 	deadline := time.Now().Add(3 * time.Minute)
 	for st.State == "Home" {
 		if time.Now().After(deadline) {
@@ -108,13 +113,22 @@ func (c *HomeCommand) RunIntoGlazeProcessor(
 		}
 	}
 
+	// A finished cycle parks at -1,-1,-1 — the SAME position an unhomed
+	// machine reports, and stock firmware never says which it is. Report
+	// what was actually observed and no more.
+	note := "homing cycle observed and completed; machine parked at rest"
+	if !cycleObserved {
+		note = "no Home state was observed within 6s: either the cycle was faster than the poll, " +
+			"or $H was silently consumed (seen once after a hold episode). If the machine did not move, run home again"
+	}
 	return gp.AddRow(ctx, types.NewRow(
 		types.MRP("command", "$H"),
+		types.MRP("cycle_observed", cycleObserved),
 		types.MRP("state_after", st.State),
-		types.MRP("homed", st.Homed && st.State != "Home"),
 		types.MRP("mx", st.Machine.X),
 		types.MRP("my", st.Machine.Y),
 		types.MRP("mz", st.Machine.Z),
+		types.MRP("note", note),
 	))
 }
 

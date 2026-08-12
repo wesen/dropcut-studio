@@ -218,18 +218,15 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	// The first $H after a hold episode can be silently consumed by the
-	// firmware (MZ1-001 observations §12). Tell the operator instead of
-	// reporting a success that did not happen; the page's status poll shows
-	// the Home state while a real cycle runs.
-	if res.StateAfter.State != "Home" && !res.StateAfter.Homed {
-		writeJSON(w, http.StatusConflict, map[string]any{
-			"error": "homing did not start: the machine accepted $H and did nothing — known firmware behaviour after a hold; press HOME again"})
-		return
-	}
+	// The Home state appears with a lag and a finished cycle parks at the
+	// same -1,-1,-1 an unhomed machine reports, so no instant verdict is
+	// honest here. The page's status poll shows Home while a real cycle
+	// runs; if the state never leaves Idle and the machine did not move,
+	// $H was silently consumed (seen once after a hold episode) — press
+	// HOME again.
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok": true, "sent": res.Sent, "state_after": res.StateAfter.State,
-		"note": "homing runs for tens of seconds; the header shows Home until it finishes",
+		"note": "watch the header: Home appears while the cycle runs; if nothing happens within a few seconds, press HOME again",
 	})
 }
 

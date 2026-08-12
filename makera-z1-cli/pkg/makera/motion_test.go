@@ -204,10 +204,28 @@ func TestPreflightRefusesWhilePlaying(t *testing.T) {
 	preflightFails(t, m, PreflightOptions{}, "job")
 }
 
-func TestPreflightRefusesUnhomedForAbsoluteMoves(t *testing.T) {
+// TestPreflightHomingIsAdvisoryOnly pins the corrected model (observations
+// §12): -1,-1,-1 is both the boot position and the post-homing rest position,
+// and stock firmware never reports homing — so a preflight that REFUSED on it
+// would refuse a freshly homed machine parked at rest. It warns instead; the
+// firmware is the real gate and its replies are surfaced.
+func TestPreflightHomingIsAdvisoryOnly(t *testing.T) {
 	m := newFakeMachine(nil, 128)
-	m.homed = false
-	preflightFails(t, m, PreflightOptions{RequireHomed: true}, "homed")
+	m.homed = false // fake reports MPos -1,-1,-1
+	c := newFakeClient(t, m)
+
+	rep, err := c.Preflight(context.Background(), ClassMotion, PreflightOptions{RequireHomed: true})
+	require.NoError(t, err)
+	assert.Empty(t, rep.Failures(), "the ambiguous rest position must never refuse motion")
+
+	warned := false
+	for _, ch := range rep.Checks {
+		if ch.Name == "homed" && !ch.OK && !ch.Fatal {
+			warned = true
+			assert.Contains(t, ch.Detail, "cannot say")
+		}
+	}
+	assert.True(t, warned, "an absolute move from the rest position must carry the warning")
 }
 
 func TestPreflightPermitsUnhomedRelativeJog(t *testing.T) {

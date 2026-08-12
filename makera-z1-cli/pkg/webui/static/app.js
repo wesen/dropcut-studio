@@ -143,11 +143,12 @@ function renderStatus(s) {
     row.querySelector(".m").textContent = fmtCoord(s.machine[i]);
   }
 
-  // An unhomed machine reports -1 on the linear axes. Saying so is better than
-  // showing a coordinate that looks real but references nothing.
-  $("homedNote").innerHTML = s.homed
-    ? '<span class="ok">homed</span>'
-    : '<span class="warn">not homed</span> — machine coordinates are not meaningful; jog is relative and still works';
+  // -1,-1,-1 is AMBIGUOUS: it is both the boot position and the post-homing
+  // rest position, and stock firmware never reports its homed flag. Say what
+  // is actually known rather than pretending to know more.
+  $("homedNote").innerHTML = s.at_rest
+    ? '<span class="warn">at -1,-1,-1</span> — parked at home OR never homed (firmware doesn\'t say); home first if unsure'
+    : '<span class="ok">position live</span> — moved since boot/homing';
 
   $("state").textContent = s.state || "—";
   $("feed").textContent = fmtRate(s.feed, "mm/min");
@@ -168,9 +169,9 @@ function renderStatus(s) {
   const drops = s.drops
     ? ` · <span class="warn">${s.drops} dropped frames</span>`
     : "";
-  const homed = s.homed
-    ? ' · <span class="ok">homed ✓</span>'
-    : ' · <span class="warn">not homed</span>';
+  const homed = s.at_rest
+    ? ' · <span class="warn">at rest — homed?</span>'
+    : ' · <span class="ok">position live</span>';
   $("conn").innerHTML =
     `<span class="ok">connected</span> · ${escapeHtml(s.state || "—")}${homed}${drops}`;
   $("tick").textContent = new Date().toLocaleTimeString();

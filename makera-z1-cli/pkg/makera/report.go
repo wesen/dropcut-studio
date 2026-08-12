@@ -157,9 +157,27 @@ type Status struct {
 	Playing    *Playback
 	HaltReason int
 
-	// Homed is false when the machine reports the unhomed sentinel of -1 on
-	// all three linear axes. Reporting a position that looks real when the
-	// machine has no reference is worse than reporting nothing.
+	// AtRestPosition is true when MPos reads exactly -1,-1,-1. That position
+	// is AMBIGUOUS: it is the boot position AND the post-homing rest position
+	// (the machine parks ~1mm off the max switches after homing — watched on
+	// hardware 2026-08-12, observations §12). Stock firmware never reports
+	// its homed flag in any status field, so homing is UNKNOWABLE from a
+	// status report:
+	//
+	//   MPos == -1,-1,-1 → unhomed OR freshly homed and parked. Cannot tell.
+	//   MPos != -1,-1,-1 → the machine has moved since boot or homing —
+	//                      which still proves nothing, because an unhomed
+	//                      machine jogs too.
+	//
+	// Consumers must treat homing as advisory. The firmware itself is the
+	// real gate: an absolute move on an unhomed machine answers "<axis> axis
+	// is not homed", and `play` silently does nothing.
+	AtRestPosition bool
+
+	// Homed is the LEGACY heuristic (MPos != -1,-1,-1), kept for display.
+	// It is wrong in both directions — false for a homed machine parked at
+	// rest, true for an unhomed machine that jogged — and nothing may refuse
+	// motion based on it.
 	Homed bool
 
 	Raw *Report
@@ -205,7 +223,8 @@ func InterpretStatus(r *Report) Status {
 			Active:  r.Int("P", 3, 0) != 0,
 		}
 	}
-	s.Homed = !(s.Machine.X == -1 && s.Machine.Y == -1 && s.Machine.Z == -1)
+	s.AtRestPosition = s.Machine.X == -1 && s.Machine.Y == -1 && s.Machine.Z == -1
+	s.Homed = !s.AtRestPosition
 	return s
 }
 

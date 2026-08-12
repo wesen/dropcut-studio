@@ -170,19 +170,24 @@ func writeErr(w http.ResponseWriter, err error) {
 }
 
 type statusPayload struct {
-	Connected bool             `json:"connected"`
-	State     string           `json:"state"`
-	Homed     bool             `json:"homed"`
-	Machine   [5]float64       `json:"machine"`
-	Work      [5]float64       `json:"work"`
-	Feed      makera.Rate      `json:"feed"`
-	Spindle   makera.Rate      `json:"spindle"`
-	Tool      int              `json:"tool"`
-	TLO       float64          `json:"tlo"`
-	Playing   *makera.Playback `json:"playing"`
-	Drops     int              `json:"drops"`
-	Raw       string           `json:"raw"`
-	At        string           `json:"at"`
+	Connected bool   `json:"connected"`
+	State     string `json:"state"`
+	// Homed is the legacy heuristic (position != -1,-1,-1) and is advisory:
+	// stock firmware never reports homing, and -1,-1,-1 is both the boot
+	// position and the post-homing rest position. AtRest carries the honest
+	// signal for the page's wording.
+	Homed   bool             `json:"homed"`
+	AtRest  bool             `json:"at_rest"`
+	Machine [5]float64       `json:"machine"`
+	Work    [5]float64       `json:"work"`
+	Feed    makera.Rate      `json:"feed"`
+	Spindle makera.Rate      `json:"spindle"`
+	Tool    int              `json:"tool"`
+	TLO     float64          `json:"tlo"`
+	Playing *makera.Playback `json:"playing"`
+	Drops   int              `json:"drops"`
+	Raw     string           `json:"raw"`
+	At      string           `json:"at"`
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {

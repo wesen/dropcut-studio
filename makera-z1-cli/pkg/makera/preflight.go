@@ -142,13 +142,20 @@ func (c *Client) Preflight(ctx context.Context, class RiskClass, opts PreflightO
 			fmt.Sprintf("a job is running (line %d, %d%%)", playingLines(st), playingPercent(st))))
 	}
 
-	// 7 — homed, when the request needs a reference.
-	if opts.RequireHomed {
-		add("homed", st.Homed, true, pick(st.Homed, "reference established",
-			"not homed; absolute coordinates are meaningless — home first"))
+	// 7 — homed. ADVISORY ONLY: stock firmware does not report its homed
+	// flag, and the -1,-1,-1 position is both "never homed" and "parked at
+	// home after a successful cycle" (observations §12), so refusing on it
+	// would refuse a freshly homed machine at rest. The firmware is the real
+	// gate — an absolute move on an unhomed machine answers "axis is not
+	// homed" (now surfaced in Replies), and `play` silently no-ops.
+	if opts.RequireHomed && st.AtRestPosition {
+		add("homed", false, false,
+			"position is -1,-1,-1 — parked at home OR never homed; stock firmware cannot say. "+
+				"If actually unhomed, absolute moves error and play silently does nothing — home first if unsure")
 	} else {
-		add("homed", true, false, pick(st.Homed, "reference established",
-			"not homed (permitted: this request is relative motion only)"))
+		add("homed", true, false, pick(st.AtRestPosition,
+			"at the -1,-1,-1 rest position (homing unknowable on stock firmware)",
+			"position has moved since boot or homing"))
 	}
 
 	// 8 — axis limits. WARN ONLY: indices E[0..4] are inherited from

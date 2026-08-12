@@ -916,3 +916,84 @@ the hold episode, consumed by the first `$H`.
 
 - Pin the exact residual flag someday if a firmware update changes the
   behaviour; until then the rule is cheap and safe.
+
+## Step 14: Step 13 was wrong too — homing is unknowable on stock firmware
+
+The user re-ran homing and reported the machine homing CORRECTLY while the
+new "no-op detection" declared failure twice, and status afterwards still
+read `MPos -1,-1,-1`. That falsified two things at once, one of them dating
+back to MZ1-001: `-1,-1,-1` is not an unhomed sentinel — it is ALSO the
+post-homing rest position (the machine parks ~1mm off the max switches), and
+the stock firmware source (`Kernel.cpp` report builder) confirms the status
+report carries NO homed flag at all — `Robot::is_homed` is internal and
+never serialised. Homing is unknowable from the wire. Every layer built on
+the sentinel — `Status.Homed`, the preflight's homed refusal, the header
+indicator, and step 13's no-op detection — inherited the bad axiom.
+
+The "silent $H no-op" story also shrank: `Home` appears in status with a
+lag, so a single instant read misses a real cycle; the earlier
+"first failed, second worked" sequence is consistent with the first $H's
+cycle becoming visible by the time the second ran. A genuine consumed-$H
+path exists in the dispatch source, but no instant read can distinguish it.
+
+### Prompt Context
+
+**User prompt (verbatim):** "it actually homes correctly, ❯ go run ./cmd/z1ctl home --confirm … z1ctl: homing did not start: the machine accepted $H and did nothing (state Idle, still unhomed) … [twice, then status showing MPos -1,-1,-1 after a watched homing]"
+
+**Assistant interpretation:** The no-op detection misfires and the homed
+heuristic is wrong at the root; find the truth in the firmware and rebuild
+every layer honestly.
+
+**Inferred user intent:** A tool that never claims to know more than the
+machine tells it.
+
+**Commit (code):** (this commit)
+
+### What I did
+
+- `Status.AtRestPosition` replaces the sentinel logic; `Homed` remains as a
+  documented-legacy display heuristic that nothing may refuse on.
+- Preflight homing is advisory-only in ALL cases now: at the rest position
+  with an absolute move requested it WARNS with the ambiguity spelled out.
+  The firmware is the real gate — "axis is not homed" replies are surfaced
+  since step 12's Replies change, and `play` silently no-ops (known).
+- `home --confirm` polls up to 6s for the `Home` state instead of one
+  instant read, watches an observed cycle to completion, and reports
+  `cycle_observed` plus an honest note instead of claiming homed.
+- Page and doctor wording: "at -1,-1,-1 — parked at home OR never homed
+  (firmware doesn't say)" / "position live"; header shows
+  `at rest — homed?` in amber.
+- Rewrote observations §12 as a double correction and amended the two
+  original "-1 = unhomed" claims in place with pointers to it.
+- Decoded `C:` while in the source: `MachineModel,FuncSetting,inch_mode,
+  absolute_mode` — recorded in §12.
+
+### What I learned
+
+- Fifth observability-lag hit, and the deepest: this one had been recorded
+  as ground truth for a day and had grown three layers of code on top.
+  Ground-truth documents need correction discipline as much as code does —
+  the wrong §12 was itself only hours old.
+- "The tool must never claim to know more than the machine tells it" is now
+  a working rule; stock firmware simply does not tell anyone whether it is
+  homed.
+
+### What warrants a second pair of eyes
+
+- The preflight change means NOTHING refuses an absolute move from the rest
+  position any more — the firmware's own "axis is not homed" error and the
+  silent play no-op are the only gates. The operator should confirm they
+  are comfortable with warn-only here; it is the honest option but it is
+  weaker than the (falsely grounded) refusal it replaces.
+
+### What should be done in the future
+
+- If homed-certainty is ever wanted, track it session-side in the web
+  server: a Home cycle observed to completion sets a flag that survives
+  until disconnect. Not implemented — the CLI could never share it and a
+  half-true flag is the trap this step just climbed out of.
+
+### Code review instructions
+
+- `pkg/makera/report.go` (AtRestPosition comment block), `preflight.go`
+  condition 7, `positioning.go` home flow, observations §12.

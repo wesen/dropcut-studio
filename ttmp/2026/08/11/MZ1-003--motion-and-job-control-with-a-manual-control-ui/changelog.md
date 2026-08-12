@@ -71,3 +71,12 @@ Bring-up incidents: feed hold had no exit (resume != cycle start; hold --release
 
 - /home/manuel/workspaces/2026-08-11/cnc-control-dropcut/dropcut-studio/makera-z1-cli/pkg/makera/jobctl.go — CycleStart, the hold release
 
+
+## 2026-08-12
+
+CORRECTION: -1,-1,-1 is the post-homing rest position AND the boot position; stock firmware never reports homing (Kernel.cpp). Homed heuristic demoted to advisory everywhere, preflight warns instead of refusing, home polls for the Home state, UI says what is actually known. Observations §12 rewritten as a double correction. C: key decoded (model,func,inch,absolute).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-08-11/cnc-control-dropcut/dropcut-studio/makera-z1-cli/pkg/makera/report.go — AtRestPosition and the legacy Homed heuristic
+
