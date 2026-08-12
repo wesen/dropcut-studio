@@ -127,6 +127,8 @@ func (c *Client) Download(
 ) (DownloadResult, error) {
 	var res DownloadResult
 
+	c.cmdMu.Lock()
+	defer c.cmdMu.Unlock()
 	c.beginTransfer()
 	defer c.endTransfer()
 
@@ -332,6 +334,8 @@ func (c *Client) Upload(
 	blocks := int((size + int64(blockSize) - 1) / int64(blockSize))
 	res.Blocks = blocks
 
+	c.cmdMu.Lock()
+	defer c.cmdMu.Unlock()
 	c.beginTransfer()
 	defer c.endTransfer()
 

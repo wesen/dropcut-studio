@@ -41,6 +41,7 @@ const (
 	RealtimeHold      byte = '!'
 	RealtimeResume    byte = '~'
 	RealtimeSoftReset byte = 0x18
+	RealtimeJogStop   byte = 0x19 // Ctrl-Y; firmware acknowledges with ^Y
 	RealtimeJogKeep   byte = 0x1A // Makera protocol; Smoothie uses '1'
 )
 
@@ -94,6 +95,21 @@ type Client struct {
 	mode   atomic.Int32
 	msgs   chan Message
 	frames chan Frame
+
+	// cmdMu serialises every drain→write→collect exchange (Command,
+	// QueryStatus, file transfers). Without it, two concurrent exchanges pull
+	// from the one msgs channel and each may steal the other's reply. Realtime
+	// writes deliberately do NOT take it: feed hold and jog stop must never
+	// wait behind a slow listing.
+	cmdMu sync.Mutex
+
+	// jogAck, when non-nil, is closed by the read loop on the firmware's ^Y
+	// jog-stop acknowledgement. Detection happens in the read loop so the
+	// waiter never competes with a command exchange for the msgs channel.
+	jogAck atomic.Pointer[chan struct{}]
+
+	// jogActive enforces one continuous jog at a time.
+	jogActive atomic.Bool
 
 	mu     sync.RWMutex
 	info   MachineInfo
@@ -207,24 +223,53 @@ func (c *Client) readLoop(ctx context.Context) {
 				c.logger.Warn().Str("protocol", announced).Msg("switching protocol on announcement")
 				c.proto = NewProtocol(announced)
 			}
-			select {
-			case c.msgs <- m:
-			case <-ctx.Done():
+			// The jog-stop acknowledgement is signalled here, in the one
+			// place every inbound message passes, so the waiter never has to
+			// compete with a command exchange for the msgs channel. The
+			// timeout lines are the firmware's own jog-state resets and count
+			// as the jog being over.
+			if strings.HasPrefix(m.Text, "^Y") ||
+				strings.Contains(m.Text, "Stop request timeout") ||
+				strings.Contains(m.Text, "Internal stop request reset") {
+				if ch := c.jogAck.Swap(nil); ch != nil {
+					close(*ch)
+				}
+			}
+			if !c.deliver(ctx, m) {
 				return
-			default:
-				// Never block the reader on a slow consumer; dropping the
-				// oldest keeps status current, which is what matters.
-				select {
-				case <-c.msgs:
-				default:
-				}
-				select {
-				case c.msgs <- m:
-				default:
-				}
 			}
 		}
 	}
+}
+
+// deliver enqueues one message without ever blocking the reader. When the
+// channel is full it prefers dropping stale output over fresh output — with
+// one exception: a message carrying the completion sentinel is never the one
+// dropped, because losing it turns a completed command into a 15-second
+// timeout. Returns false only when ctx ended.
+func (c *Client) deliver(ctx context.Context, m Message) bool {
+	select {
+	case c.msgs <- m:
+		return true
+	case <-ctx.Done():
+		return false
+	default:
+	}
+	// Channel full. Make room by discarding the oldest message — unless the
+	// oldest is a sentinel, in which case the incoming message is the one to
+	// sacrifice (unless it carries a sentinel itself).
+	select {
+	case old := <-c.msgs:
+		if strings.Contains(old.Text, sentinelByte) && !strings.Contains(m.Text, sentinelByte) {
+			m = old
+		}
+	default:
+	}
+	select {
+	case c.msgs <- m:
+	default:
+	}
+	return true
 }
 
 func (c *Client) write(b []byte) error {
@@ -270,6 +315,8 @@ func (c *Client) Command(ctx context.Context, cmd string) ([]Message, error) {
 // commandUnchecked bypasses the motion guard. Callers must have obtained
 // explicit authorisation; see MotionCommand.
 func (c *Client) commandUnchecked(ctx context.Context, cmd string) ([]Message, error) {
+	c.cmdMu.Lock()
+	defer c.cmdMu.Unlock()
 	c.drain()
 	c.logger.Debug().Str("cmd", cmd).Msg("send")
 	if err := c.write(c.proto.EncodeCommand([]byte(cmd))); err != nil {
@@ -347,17 +394,15 @@ func (c *Client) Realtime(chars ...byte) error {
 
 // QueryStatus sends the realtime '?' and parses the reply.
 func (c *Client) QueryStatus(ctx context.Context) (Status, error) {
+	c.cmdMu.Lock()
+	defer c.cmdMu.Unlock()
 	c.drain()
 	if err := c.write(c.proto.EncodeRealtime(RealtimeStatus)); err != nil {
 		return Status{}, err
 	}
-	line, err := c.awaitBracketed(ctx, '<', 2*time.Second)
+	rep, err := c.awaitReport(ctx, '<', '>', 2*time.Second)
 	if err != nil {
 		return Status{}, errors.Wrap(err, "query status")
-	}
-	rep, err := ParseReport(line, '<', '>')
-	if err != nil {
-		return Status{}, err
 	}
 	return InterpretStatus(rep), nil
 }
@@ -380,18 +425,25 @@ func (c *Client) QueryDiagnose(ctx context.Context) (Diagnose, error) {
 	return Diagnose{}, errors.New("no diagnose report in reply")
 }
 
-func (c *Client) awaitBracketed(ctx context.Context, open byte, timeout time.Duration) (string, error) {
+// awaitReport waits for a message that parses as a bracketed report. A message
+// merely CONTAINING the open byte is not enough — an informational line
+// quoting a `<` must not abort a status query that would have succeeded one
+// message later.
+func (c *Client) awaitReport(ctx context.Context, open, close byte, timeout time.Duration) (*Report, error) {
 	deadline := time.NewTimer(timeout)
 	defer deadline.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return "", ctx.Err()
+			return nil, ctx.Err()
 		case <-deadline.C:
-			return "", errors.Errorf("timeout after %s", timeout)
+			return nil, errors.Errorf("timeout after %s", timeout)
 		case m := <-c.msgs:
-			if strings.IndexByte(m.Text, open) >= 0 {
-				return m.Text, nil
+			if strings.IndexByte(m.Text, open) < 0 {
+				continue
+			}
+			if rep, err := ParseReport(m.Text, open, close); err == nil {
+				return rep, nil
 			}
 		}
 	}

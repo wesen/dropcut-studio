@@ -6,6 +6,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"io"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -52,6 +53,37 @@ type fakeMachine struct {
 	ulBlockLen int
 	ulNext     uint32
 	closed     bool
+
+	// -------- control-path state (MZ1-003) --------
+
+	// state is the machine state word in status reports.
+	state string
+	// haltCode is emitted as H: while state is Alarm.
+	haltCode int
+	// homed selects real coordinates versus the -1,-1,-1 unhomed sentinel.
+	homed bool
+	// endstops is the E: vector for diagnose replies. Eight fields with
+	// E[5]=1 (cover closed) is the realistic default.
+	endstops []string
+	// estop is diagnose I[0].
+	estop bool
+	// playing, when non-nil, is emitted as the P: key.
+	playing *Playback
+
+	// cmds records every text command received, in order.
+	cmds []string
+
+	// jogging state, driven by $J -c / keepalives / 0x19.
+	jogging         bool
+	jogLastKeep     time.Time
+	jogKeepTimes    []time.Time
+	jogDeadman      time.Duration
+	jogGotStop      bool // 0x19 received
+	jogDeadmanFired bool
+	suppressJogAck  bool // do not answer 0x19 with ^Y
+
+	// replies maps a received command verb-line to a canned reply.
+	replies map[string]string
 }
 
 const (
@@ -64,10 +96,132 @@ const (
 func newFakeMachine(file []byte, blockSize int) *fakeMachine {
 	sum := md5.Sum(file)
 	return &fakeMachine{
-		file:      file,
-		digest:    hex.EncodeToString(sum[:]),
-		blockSize: blockSize,
-		received:  map[uint32][]byte{},
+		file:       file,
+		digest:     hex.EncodeToString(sum[:]),
+		blockSize:  blockSize,
+		received:   map[uint32][]byte{},
+		state:      "Idle",
+		homed:      true,
+		endstops:   []string{"0", "0", "0", "0", "0", "1", "1", "0"},
+		jogDeadman: 600 * time.Millisecond,
+		replies:    map[string]string{},
+	}
+}
+
+// jogActiveNow applies the firmware's dead-man: a jog whose last keepalive is
+// older than the window has already been stopped by the machine.
+func (m *fakeMachine) jogActiveNow() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.jogActiveLocked()
+}
+
+func (m *fakeMachine) jogActiveLocked() bool {
+	if m.jogging && time.Since(m.jogLastKeep) > m.jogDeadman {
+		m.jogging = false
+		m.jogDeadmanFired = true
+	}
+	return m.jogging
+}
+
+func (m *fakeMachine) statusReport() string {
+	pos := "-1.0000,-1.0000,-1.0000,0.0000,0.0000"
+	if m.homed {
+		pos = "10.0000,20.0000,30.0000,0.0000,0.0000"
+	}
+	rep := "<" + m.state + "|MPos:" + pos + "|WPos:" + pos +
+		"|F:0.0,3000.0,100.0|S:0.0,0.0,100.0|T:-1,0.0"
+	if m.state == "Alarm" && m.haltCode != 0 {
+		rep += "|H:" + itoaTest(m.haltCode)
+	}
+	if m.playing != nil {
+		rep += "|P:" + itoaTest(m.playing.Lines) + "," + itoaTest(m.playing.Percent) +
+			"," + itoaTest(m.playing.Seconds) + ",1"
+	}
+	return rep + ">"
+}
+
+func (m *fakeMachine) diagnoseReport() string {
+	i0 := "0"
+	if m.estop {
+		i0 = "1"
+	}
+	rep := "{S:0,0.0|W:12.0|E:" + join(m.endstops) + "|P:0,0|I:" + i0 + ",0,0,0|RSSI:-57}"
+	return rep
+}
+
+func itoaTest(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	var b []byte
+	for n > 0 {
+		b = append([]byte{byte('0' + n%10)}, b...)
+		n /= 10
+	}
+	if neg {
+		return "-" + string(b)
+	}
+	return string(b)
+}
+
+func join(parts []string) string {
+	out := ""
+	for i, p := range parts {
+		if i > 0 {
+			out += ","
+		}
+		out += p
+	}
+	return out
+}
+
+// handleRealtime plays the firmware's realtime byte handling. Caller holds m.mu.
+func (m *fakeMachine) handleRealtime(b byte) {
+	switch b {
+	case '?':
+		m.jogActiveLocked() // lazily apply the dead-man
+		m.reply(PTypeStatusRes, []byte(m.statusReport()+"\r\n"))
+	case RealtimeJogKeep:
+		if m.jogActiveLocked() {
+			m.jogLastKeep = time.Now()
+			m.jogKeepTimes = append(m.jogKeepTimes, m.jogLastKeep)
+		}
+	case RealtimeJogStop:
+		m.jogGotStop = true
+		m.jogging = false
+		if !m.suppressJogAck {
+			m.reply(PTypeNormalInfo, []byte("^Y\r\n"))
+		}
+	case RealtimeHold:
+		m.state = "Hold"
+	}
+}
+
+// handleCommand plays the firmware's line-command handling. Caller holds m.mu.
+func (m *fakeMachine) handleCommand(cmd string) {
+	m.cmds = append(m.cmds, cmd)
+	switch {
+	case cmd == "echo \x04":
+		m.reply(PTypeNormalInfo, []byte("echo: \x04\r\n"))
+	case strings.HasPrefix(cmd, "echo "):
+		m.reply(PTypeNormalInfo, []byte("echo: "+cmd[len("echo "):]+"\r\n"))
+	case cmd == "diagnose":
+		m.reply(PTypeDiagRes, []byte(m.diagnoseReport()+"\r\n"))
+	case strings.HasPrefix(cmd, "$J -c"):
+		if m.state == "Idle" {
+			m.jogging = true
+			m.jogDeadmanFired = false
+			m.jogLastKeep = time.Now()
+		}
+	default:
+		if reply, ok := m.replies[cmd]; ok {
+			m.reply(PTypeNormalInfo, []byte(reply+"\r\n"))
+		}
 	}
 }
 
@@ -121,6 +275,16 @@ func (m *fakeMachine) blocks() uint32 {
 
 // handle plays the machine side. Caller holds m.mu.
 func (m *fakeMachine) handle(f Frame) {
+	switch f.Type {
+	case PTypeCtrlSingle:
+		if len(f.Payload) == 1 {
+			m.handleRealtime(f.Payload[0])
+		}
+		return
+	case PTypeCtrlMulti:
+		m.handleCommand(string(f.Payload))
+		return
+	}
 	switch f.Type {
 	case PTypeFileStart:
 		cmd := string(f.Payload)
