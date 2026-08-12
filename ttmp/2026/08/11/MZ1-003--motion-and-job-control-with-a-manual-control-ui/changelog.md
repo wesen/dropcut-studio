@@ -62,3 +62,12 @@ Hardware bring-up finding: $J F is a scale of max_rate on stock firmware (F1..F1
 
 - /home/manuel/workspaces/2026-08-11/cnc-control-dropcut/dropcut-studio/ttmp/2026/08/11/MZ1-003--motion-and-job-control-with-a-manual-control-ui/vendor/README.md — Firmware evidence provenance
 
+
+## 2026-08-12
+
+Bring-up incidents: feed hold had no exit (resume != cycle start; hold --release + /api/cycle-start added, b23a625); header shows homed state (31a2fd3); $H silently no-ops while unhomed — OPEN, Motion now surfaces machine reply text to diagnose it (3d03711). Vault report published (go-go-parc c3135d8). Diary steps 9-12.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-08-11/cnc-control-dropcut/dropcut-studio/makera-z1-cli/pkg/makera/jobctl.go — CycleStart, the hold release
+

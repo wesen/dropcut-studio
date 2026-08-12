@@ -648,3 +648,217 @@ both units, each valid exactly where the firmware can express it.
 
 - `pkg/makera/motion.go`: the dialect table comment, `JogSpeed.word`,
   `TestJogSpeedDialects` in motion_test.go.
+
+## Step 9: Third vault report — the motion phase written up
+
+Wrote the phase's deep-dive report into the go-go-parc Obsidian vault as the
+third note in the Makera series: the risk classes and the one absolute rule,
+the typed-op architecture, the dead-man chain with the operator's
+failure-asymmetry argument quoted as the reason the lease design was deleted,
+and the `$J` F-word discovery framed as a case study in observation
+outranking citation.
+
+### Prompt Context
+
+**User prompt (verbatim):** "write a detailed project report for the obsidian vault as a deep dive technical analysis blog post using a textbook writing style (no analogies, see skill).
+ Commit and push the bsidian vault when done (go-go-parc vault)."
+
+**Assistant interpretation:** Same shape as the two earlier reports — durable
+PROJ note, textbook prose, mermaid diagrams, no analogies — covering MZ1-003.
+
+**Inferred user intent:** Keep the vault's record of the project current at
+each phase boundary.
+
+**Commit (vault):** go-go-parc c3135d8 — "docs(makera-z1): report the motion phase — dead-man chain, risk classes, $J dialect finding"
+
+### What I did
+
+- `Projects/2026/08/12/PROJ - Makera Z1 Control - Crossing into Motion.md`,
+  wikilinked to the two prior notes; committed only the note, pushed.
+
+### What should be done in the future
+
+- N/A — the note carries its own open-questions section.
+
+### Code review instructions
+
+- Read the note's "Working rules" section; it is the distilled contract.
+
+## Step 10: The hold with no exit — feed hold is not suspend
+
+Live incident during bring-up: the user sent a feed hold, then could not get
+out of it. The page's RESUME (which sends the `resume` command) answered
+`{"ok":true}` and did nothing; the machine light blinked in Hold. A second
+datapoint arrived mid-diagnosis: spindle STOP returned
+`{"ok":true,"sent":["M5"],"state_after":"Hold"}` — accepted, state unchanged.
+
+Both observations have one explanation. In this firmware, `suspend`/`resume`
+are the Player module's job-pause pair, while a feed hold (`!`) is a
+different mechanism released only by the realtime cycle start (`~`). And
+during a hold, queued G-code — the M5 included — is accepted but not
+executed; it runs the moment the hold is released. The library had
+`Client.CycleStart()` from Phase 1, but nothing exposed it: a hold was a
+one-way door.
+
+### Prompt Context
+
+**User prompt (verbatim):** "so I sent a feed hold but i can't seem to resume out of it. 
+
+Response for status: {\"connected\":true,\"state\":\"Hold\",\"homed\":false,\"machine\":[-1,-1,-1,0,0],\"work\":[189.52,192.73,77.1609,-90,0],\"feed\":{\"Current\":0,\"Target\":2000,\"Override\":100},\"spindle\":{\"Current\":0,\"Target\":10000,\"Override\":100},\"tool\":2,\"tlo\":0.054,\"playing\":null,\"drops\":0,...}
+
+---
+
+when sending resume: {\"ok\":true}
+
+---
+
+light is blinking" — followed mid-work by: "If I say, stop the spindle, I get: {\"ok\":true,\"sent\":[\"M5\"],\"state_after\":\"Hold\"}"
+
+**Assistant interpretation:** The machine is stuck in Hold; our resume path
+sends the wrong mechanism's counterpart.
+
+**Inferred user intent:** A working way out of feed hold, and a UI that does
+not lie about it.
+
+**Commit (code):** b23a625 — "hold --release: a feed hold is released by cycle start, not 'resume'"
+
+### What I did
+
+- Confirmed in the vendored stock Player source that `resume` pairs with
+  `suspend`, not with feed hold.
+- Exposed cycle start on all three surfaces: `z1ctl hold --release
+  --confirm`, `POST /api/cycle-start`, and the page's RESUME button now
+  routes by state — `Hold` → cycle start, suspended job → `resume`.
+- Release requires confirmation everywhere, with the reason stated: it is
+  NOT a stop — the frozen motion resumes and everything queued behind the
+  hold executes immediately.
+- Fake machine: `~` transitions Hold → Idle; `TestHoldAndCycleStart` pins the
+  pairing.
+
+### Why
+
+- Class 0 reasoning cuts both ways: engaging a hold is never gated, and
+  releasing one is gated precisely because it restarts motion.
+
+### What worked
+
+- The user's M5 datapoint arrived mid-fix and slotted straight into the
+  model: it was the queued-command behaviour, observed live.
+
+### What didn't work
+
+- The original UI copy ("RESUME continues the held motion") pointed the
+  operator at a button that could not work. Corrected to say what release
+  does and to warn about the queue.
+
+### What I learned
+
+- The hold/queue interaction is the sharpest operator trap so far: every
+  command sent during a hold looks accepted and does nothing until release.
+  The gating message now says "stand clear" for exactly this reason.
+
+### What warrants a second pair of eyes
+
+- Whether `job abort` reliably flushes a held queue (offered to the operator
+  as the cautious alternative to release); exercised on this machine only
+  informally.
+
+### Code review instructions
+
+- `pkg/makera/jobctl.go` (`CycleStart`), `cmd/z1ctl/cmds/outputs.go`
+  (`HoldCommand`), `pkg/webui/motion.go` (`handleCycleStart`),
+  `app.js` (RESUME routing).
+
+## Step 11: Homed state in the header
+
+Small UI change on request: the header status line now reads
+`connected · Idle · homed ✓` (green) or `· not homed` (amber). The DRO footer
+and the Checks tab already carried the information; the header is where the
+operator's eyes are, and the original design mockup had it there all along.
+
+### Prompt Context
+
+**User prompt (verbatim):** "Can I see if the machine is homed in the UI?"
+
+**Assistant interpretation / intent:** Surface homing state at a glance.
+
+**Commit (code):** 31a2fd3 — "Header shows state and homed at a glance"
+
+### What should be done in the future
+
+- N/A.
+
+## Step 12: `$H` silently does nothing — OPEN
+
+With the machine unhomed (it lost its reference at some point around the
+hold episode — `MPos -1,-1,-1`), both the page's HOME and `z1ctl home
+--confirm` return ok with `state_after: Idle` immediately and the machine
+never moves. A real homing cycle takes tens of seconds and reports `Home`
+while running, so `$H` is being accepted and no-opped, the same shape as
+`play`-while-unhomed.
+
+Source reading so far (stock SimpleShell + Endstops): `$H` prints `ok`
+unconditionally and maps to a homing cycle in BOTH firmware modes (grbl mode
+→ `G28.2`, non-grbl → `G28`, both reaching `process_home_command`), so the
+dispatch is not the explanation. Inside the homing handler the plausible
+silent exits are talkative — notably `WARNING: Nothing to home` — which
+exposed the real defect on our side: `Motion` was DISCARDING the machine's
+reply text. This firmware's consistent style is to explain refusals in prose
+while still printing ok, and we were throwing the prose away.
+
+### Prompt Context
+
+**User prompt (verbatim):** "it marks unhomed in the UI even if I just clicked HOME
+
+{\"ok\":true,\"sent\":[\"$H\"],\"state_after\":\"Idle\"}
+
+---
+
+Status is still: 
+
+{\"connected\":true,\"state\":\"Idle\",\"homed\":false,\"machine\":[-1,-1,-1,0,0],...}
+
+afterwards" — followed by the same result from `z1ctl home --confirm` on the CLI.
+
+**Assistant interpretation:** `$H` is accepted and silently ignored; find out
+why, and stop swallowing whatever the machine says about it.
+
+**Inferred user intent:** A machine that homes, or at least a tool that
+reports why it will not.
+
+**Commit (code):** 3d03711 — "Motion surfaces the machine's reply text"
+
+### What I did
+
+- Read the stock `$H` dispatch (fetched `GcodeDispatch.cpp` and the full
+  `SimpleShell.cpp` grbl-command block from the stock repo) and the homing
+  handler's early exits.
+- Added `MotionResult.Replies`: every reply line a motion command produces is
+  now captured and surfaced — a `reply` column in the CLI table,
+  `replies[]` in the web API responses.
+
+### What didn't work
+
+- Guessing from source alone. Three candidate silent exits exist and only
+  the machine's own reply text can discriminate; the tool now shows it.
+
+### What I learned
+
+- Discarding command output was this session's counterpart of the earlier
+  observability-lag pattern: the information existed, arrived, and was
+  dropped before anyone could read it. Motion commands must surface replies
+  as a matter of course.
+
+### What warrants a second pair of eyes
+
+- The undocumented `C:` status key (`C:3,1,0,1` on this machine) — present in
+  no published client; possibly machine-state relevant to the no-op.
+
+### What should be done in the future
+
+- Re-run `home --confirm` and read the reply column (next action, operator
+  present). If empty and still no motion: `get state`, then a machine power
+  cycle as the clean experiment — state left over from the held queue is the
+  standing suspect.
+- Record the resolution in MZ1-001 observations if it turns out to be
+  another firmware behaviour worth ground-truthing.
