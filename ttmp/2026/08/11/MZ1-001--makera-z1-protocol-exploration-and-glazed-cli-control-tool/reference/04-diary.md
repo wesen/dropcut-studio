@@ -14,19 +14,19 @@ Owners: []
 RelatedFiles:
     - Path: repo://dropcut-studio/ttmp/2026/08/11/MZ1-001--makera-z1-protocol-exploration-and-glazed-cli-control-tool/scripts/05-probe.py
       Note: Read-only hardware probe with the allowlist enforced before the socket write
-    - Path: repo://makera-z1-cli/cmd/z1ctl/cmds/unlock.go
+    - Path: repo://dropcut-studio/makera-z1-cli/cmd/z1ctl/cmds/unlock.go
       Note: First authorised command and its preflight; Step 10 (commit a02251f)
-    - Path: repo://makera-z1-cli/pkg/makera/client.go
+    - Path: repo://dropcut-studio/makera-z1-cli/pkg/makera/client.go
       Note: Single-reader concurrency model replacing upstream's pause-and-busy-wait (commit 6d89caf)
-    - Path: repo://makera-z1-cli/pkg/makera/fakemachine_test.go
+    - Path: repo://dropcut-studio/makera-z1-cli/pkg/makera/fakemachine_test.go
       Note: Test double for behaviours only the machine can initiate; Step 11
-    - Path: repo://makera-z1-cli/pkg/makera/filesystem.go
+    - Path: repo://dropcut-studio/makera-z1-cli/pkg/makera/filesystem.go
       Note: Authorised filesystem mutations; Step 12 (commit 3429f5b)
-    - Path: repo://makera-z1-cli/pkg/makera/filexfer.go
+    - Path: repo://dropcut-studio/makera-z1-cli/pkg/makera/filexfer.go
       Note: Framed file transfer; Step 11 (commit 21d89ea)
-    - Path: repo://makera-z1-cli/pkg/makera/safety.go
+    - Path: repo://dropcut-studio/makera-z1-cli/pkg/makera/safety.go
       Note: Motion guard; the over-inclusive classification discussed in Step 5 and fixed in Step 6 (commit e84d59f)
-    - Path: repo://makera-z1-cli/pkg/webui/webui.go
+    - Path: repo://dropcut-studio/makera-z1-cli/pkg/webui/webui.go
       Note: Shared machine session behind one mutex (commit 81d775d)
 ExternalSources: []
 Summary: 'Chronological implementation diary for MZ1-001 and MZ1-002: protocol research, offline validation, first hardware contact, the licence reversal, the Go library and CLI, and the hardware control web page — including what failed and why.'

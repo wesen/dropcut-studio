@@ -14,11 +14,11 @@ Owners: []
 RelatedFiles:
     - Path: repo://dropcut-studio/apps/studio/src/styles.css
       Note: The Studio stylesheet these tokens were taken from
-    - Path: repo://makera-z1-cli/cmd/z1ctl/cmds/serve.go
+    - Path: repo://dropcut-studio/makera-z1-cli/cmd/z1ctl/cmds/serve.go
       Note: The serve command and graceful shutdown
-    - Path: repo://makera-z1-cli/pkg/webui/static/app.css
+    - Path: repo://dropcut-studio/makera-z1-cli/pkg/webui/static/app.css
       Note: Page styling; carries DROPCUT Studio's design tokens
-    - Path: repo://makera-z1-cli/pkg/webui/webui.go
+    - Path: repo://dropcut-studio/makera-z1-cli/pkg/webui/webui.go
       Note: Server, single shared machine session, routes and JSON payloads
 ExternalSources: []
 Summary: 'Design and implementation record for the z1ctl hardware control page: a read-only machine telemetry surface served from the Go binary with go:embed, styled to match DROPCUT Studio, with motion controls deliberately disabled until the endstop mapping is confirmed.'
@@ -337,9 +337,9 @@ No write was attempted and the machine did not move.
 
 | Path | Role |
 |---|---|
-| `makera-z1-cli/pkg/webui/webui.go` | Server, session sharing, routes, JSON payloads |
-| `makera-z1-cli/pkg/webui/static/index.html` | Page structure |
-| `makera-z1-cli/pkg/webui/static/app.css` | Styling; Studio tokens |
-| `makera-z1-cli/pkg/webui/static/app.js` | Polling, rendering, tabs |
-| `makera-z1-cli/pkg/webui/static/favicon.svg` | Amber crosshair |
-| `makera-z1-cli/cmd/z1ctl/cmds/serve.go` | The `serve` command, graceful shutdown |
+| `dropcut-studio/makera-z1-cli/pkg/webui/webui.go` | Server, session sharing, routes, JSON payloads |
+| `dropcut-studio/makera-z1-cli/pkg/webui/static/index.html` | Page structure |
+| `dropcut-studio/makera-z1-cli/pkg/webui/static/app.css` | Styling; Studio tokens |
+| `dropcut-studio/makera-z1-cli/pkg/webui/static/app.js` | Polling, rendering, tabs |
+| `dropcut-studio/makera-z1-cli/pkg/webui/static/favicon.svg` | Amber crosshair |
+| `dropcut-studio/makera-z1-cli/cmd/z1ctl/cmds/serve.go` | The `serve` command, graceful shutdown |

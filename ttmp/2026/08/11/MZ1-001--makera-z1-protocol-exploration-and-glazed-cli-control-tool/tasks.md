@@ -27,7 +27,7 @@
 
 ## TODO — Phase 0: scaffolding (no hardware)
 
-- [ ] Create `makera-z1-cli/` module, add `use ./makera-z1-cli` to `go.work`
+- [ ] Create `dropcut-studio/makera-z1-cli/` module, add `use ./makera-z1-cli` to `go.work`
 - [ ] **Decide GPLv2-only vs GPLv2-or-later** (recommendation: or-later, design guide §3.5.2) — it goes in every file header, so settle it before there are file headers
 - [ ] `LICENSE` (full GPL-2.0 text), `NOTICE` from design guide §3.6, README linking both and the four upstream projects
 - [ ] `docs/protocol.md` — publish `reference/02-makera-wire-protocol-reference.md` as the spec the implementation follows

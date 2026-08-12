@@ -360,7 +360,7 @@ Flagging it now because it is cheap to plan for and expensive to unwind later.
 
 ### 3.6 Attribution and the published specification
 
-Ship this as `makera-z1-cli/NOTICE`, linked from the README:
+Ship this as `dropcut-studio/makera-z1-cli/NOTICE`, linked from the README:
 
 ```markdown
 ## Attribution
@@ -1964,7 +1964,7 @@ the first two need no machine at all.
 
 ### Phase 0 — Scaffolding (no machine needed)
 
-- `makera-z1-cli/go.mod`, `Makefile`, add to `go.work`.
+- `dropcut-studio/makera-z1-cli/go.mod`, `Makefile`, add to `go.work`.
 - `LICENSE` (full GPL-2.0 text), `NOTICE` with the attribution text from §3.6,
   README linking both and the upstream projects (ADR-008). Settle the
   GPLv2-only vs GPLv2-or-later sub-decision here (§3.5.2) — it goes in every
@@ -2081,7 +2081,7 @@ reading `vendor/gridspace-carve-control/lib/c-spoof.js` before writing ours.
 
 ### 15.4 Command validation
 
-Run from `makera-z1-cli/`:
+Run from `dropcut-studio/makera-z1-cli/`:
 
 ```bash
 gofmt -w .
