@@ -168,7 +168,11 @@ function renderStatus(s) {
   const drops = s.drops
     ? ` · <span class="warn">${s.drops} dropped frames</span>`
     : "";
-  $("conn").innerHTML = `<span class="ok">connected</span>${drops}`;
+  const homed = s.homed
+    ? ' · <span class="ok">homed ✓</span>'
+    : ' · <span class="warn">not homed</span>';
+  $("conn").innerHTML =
+    `<span class="ok">connected</span> · ${escapeHtml(s.state || "—")}${homed}${drops}`;
   $("tick").textContent = new Date().toLocaleTimeString();
 
   applyGating();
