@@ -469,6 +469,28 @@ func TestSecondConcurrentJogIsRefused(t *testing.T) {
 	assert.Contains(t, err.Error(), "never queued")
 }
 
+// TestHoldAndCycleStart pins the pairing learned on hardware: a feed hold is
+// released by the realtime cycle start, not by the `resume` command (which
+// un-suspends a job and reports ok while doing nothing for a hold).
+func TestHoldAndCycleStart(t *testing.T) {
+	m := newFakeMachine(nil, 128)
+	c := newFakeClient(t, m)
+
+	require.NoError(t, c.FeedHold())
+	time.Sleep(50 * time.Millisecond) // let the write reach the fake
+	m.mu.Lock()
+	state := m.state
+	m.mu.Unlock()
+	require.Equal(t, "Hold", state)
+
+	require.NoError(t, c.CycleStart())
+	time.Sleep(50 * time.Millisecond)
+	m.mu.Lock()
+	state = m.state
+	m.mu.Unlock()
+	assert.Equal(t, "Idle", state, "cycle start must release the hold")
+}
+
 // ---------------------------------------------------------------------------
 // Client serialisation (review §6.1)
 // ---------------------------------------------------------------------------

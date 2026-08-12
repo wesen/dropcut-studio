@@ -102,6 +102,7 @@ func (s *Server) Handler() (http.Handler, error) {
 	mux.HandleFunc("POST /api/job/abort", s.mutating(s.handleJobAbort))
 	mux.HandleFunc("POST /api/unlock", s.mutating(s.handleUnlock))
 	mux.HandleFunc("POST /api/hold", s.mutating(s.handleHold))
+	mux.HandleFunc("POST /api/cycle-start", s.mutating(s.handleCycleStart))
 	return mux, nil
 }
 

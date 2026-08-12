@@ -98,7 +98,7 @@ function motionGate() {
   if (s.state === "Alarm") return { ok: false, reason: "machine is in Alarm — read Checks, then UNLOCK below" };
   if (s.playing && s.playing.Active) return { ok: false, reason: "a job is running — jog is disabled; PAUSE and ABORT remain" };
   if (s.state === "Home") return { ok: false, reason: "homing in progress" };
-  if (s.state === "Hold") return { ok: false, reason: "feed hold — RESUME continues the held motion" };
+  if (s.state === "Hold") return { ok: false, reason: "feed hold — RESUME releases it (the frozen motion and queued commands will run; stand clear)" };
   return { ok: true, reason: "" };
 }
 
@@ -529,7 +529,17 @@ $("jobAbort").addEventListener("click", async () => {
   }
 });
 
+// RESUME routes by what actually paused the machine: a feed hold is released
+// by the realtime cycle start; a suspended job continues with `resume`.
+// Sending `resume` while in Hold reports ok and does nothing — learned on
+// hardware. Releasing a hold also executes every command that queued behind
+// it, hence the two-step arm.
 armable($("jobResume"), "RESUME", async () => {
+  if (lastStatus && lastStatus.state === "Hold") {
+    await post("/api/cycle-start", { confirm: true });
+    flash("hold released — the frozen motion and any queued commands are running");
+    return;
+  }
   await post("/api/job/resume", { confirm: true });
   flash("job resumed");
 });

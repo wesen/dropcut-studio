@@ -447,6 +447,34 @@ func (s *Server) handleJobAbort(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type cycleStartBody struct {
+	Confirm bool `json:"confirm"`
+}
+
+// handleCycleStart releases a feed hold: the realtime `~`. Class 2 — the
+// frozen motion resumes and every command queued behind the hold executes
+// immediately, which is why it takes a confirmation while the hold itself
+// never does.
+func (s *Server) handleCycleStart(w http.ResponseWriter, r *http.Request) {
+	var b cycleStartBody
+	if !decodeBody(w, r, &b) {
+		return
+	}
+	if !b.Confirm {
+		writeJSON(w, http.StatusPreconditionFailed, map[string]any{
+			"error": "refused: releasing a hold restarts the frozen motion and runs the queued commands; confirm it"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	err := s.withClient(ctx, func(c *makera.Client) error { return c.CycleStart() })
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
 type resumeBody struct {
 	Confirm bool `json:"confirm"`
 }

@@ -151,11 +151,19 @@ func (c *AccessoryCommand) RunIntoGlazeProcessor(
 	})
 }
 
-// HoldCommand is the feed hold — Class 0, deliberately the simplest command
-// in the tool: no flags beyond the connection, no preflight, no confirmation.
+// HoldCommand is the feed hold and its release. Engaging is Class 0 — no
+// confirmation, no preflight, works in every machine state. Releasing is the
+// realtime cycle start `~`, Class 2: it restarts whatever motion the hold
+// froze AND executes every command that queued up behind it, so it takes
+// --confirm.
 type HoldCommand struct{ *cmds.CommandDescription }
 
 var _ cmds.BareCommand = &HoldCommand{}
+
+type holdSettings struct {
+	Release bool `glazed:"release"`
+	Confirm bool `glazed:"confirm"`
+}
 
 func NewHoldCommand() (*HoldCommand, error) {
 	conn, err := NewConnectionSection()
@@ -164,25 +172,52 @@ func NewHoldCommand() (*HoldCommand, error) {
 	}
 	return &HoldCommand{cmds.NewCommandDescription(
 		"hold",
-		cmds.WithShort("Feed hold — pause motion NOW (never gated)"),
-		cmds.WithLong(`Send the realtime feed hold. Motion decelerates and pauses.
+		cmds.WithShort("Feed hold — pause motion NOW; --release to continue"),
+		cmds.WithLong(`Send the realtime feed hold. Motion decelerates and pauses; the
+machine reports Hold and its light blinks.
 
-This command is never gated: no confirmation, no preflight, works in every
-machine state. A stop that can be refused is not a stop.
+Engaging is never gated: no confirmation, no preflight, any state. A stop
+that can be refused is not a stop.
 
-The machine's PHYSICAL emergency stop is the real one. This is a convenience.
+Releasing is the realtime cycle start (~), and it is NOT a stop: it resumes
+whatever motion the hold froze, and every command that was queued while held
+executes immediately. Stand clear, then:
 
-Resume with 'z1ctl job resume --confirm' (cycle start).`),
+  z1ctl hold --release --confirm
+
+Note the distinction from 'z1ctl job resume': that continues a job paused
+with 'suspend'. A feed hold is released only by cycle start — sending
+'resume' in Hold reports ok and does nothing.
+
+The machine's PHYSICAL emergency stop is the real one. This is a convenience.`),
+		cmds.WithFlags(
+			fields.New("release", fields.TypeBool,
+				fields.WithDefault(false),
+				fields.WithHelp("Release the hold (cycle start). Held motion and queued commands run immediately")),
+			fields.New("confirm", fields.TypeBool,
+				fields.WithDefault(false),
+				fields.WithHelp("Required with --release: it restarts motion")),
+		),
 		cmds.WithSections(conn),
 	)}, nil
 }
 
 func (c *HoldCommand) Run(ctx context.Context, vals *values.Values) error {
+	s := &holdSettings{}
+	if err := vals.DecodeSectionInto(schema.DefaultSlug, s); err != nil {
+		return err
+	}
+	if s.Release && !s.Confirm {
+		return errors.New("refusing: releasing a hold restarts the frozen motion and runs everything queued behind it. Stand clear, then re-run with --confirm")
+	}
 	client, err := DialFrom(ctx, vals)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = client.Close() }()
+	if s.Release {
+		return client.CycleStart()
+	}
 	return client.FeedHold()
 }
 

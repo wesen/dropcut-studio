@@ -202,6 +202,10 @@ func (m *fakeMachine) handleRealtime(b byte) {
 		}
 	case RealtimeHold:
 		m.state = "Hold"
+	case RealtimeResume:
+		if m.state == "Hold" {
+			m.state = "Idle"
+		}
 	}
 }
 
