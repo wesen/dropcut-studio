@@ -637,7 +637,35 @@ dialect (a `c` in the version string marks community) before sending:
 `--feed <mm/min>` renders `F<mm/min>` on community and is REFUSED on stock,
 which cannot express it.
 
-## 12. Reproducing this session
+## 12. Homing: the first `$H` after a hold episode may silently no-op
+
+Observed 2026-08-12, machine unhomed after a feed-hold/release episode:
+
+- First `$H`: accepted (`ok`), returned immediately, state `Idle`, still
+  unhomed, no motion. No explanatory reply reached the wifi stream.
+- Second `$H`, four seconds later, identical command: homing ran normally
+  (state `Home` for the duration).
+
+The dispatch source clears a latched halt flag before issuing the homing
+cycle (`case 'H': if(is_halted) clear; then G28.2`), and the homing loop
+itself bails when halted — consistent with the first `$H` being consumed
+clearing residual state from the hold episode, though the exact flag was not
+pinned. **Empirical rule: an instant `Idle` return from `$H` means it
+no-opped; send it again.**
+
+Two more facts captured live during the successful cycle:
+
+- `get state` mid-homing shows the cycle's internal modal state —
+  `G91 … F180` (relative moves at the slow seek rate) — restored to
+  `G90 … F2000` on completion. `get state` during `Home` describes the
+  cycle, not the operator's modal state.
+- The `-1,-1,-1` unhomed sentinel disappears at homing START, because the
+  firmware resets axis positions to 0 before seeking. A client's
+  "homed" inference from `MPos != -1,-1,-1` therefore flips true the moment
+  the cycle begins; `state == "Home"` is the still-running signal, and
+  "homed" is only trustworthy once the state has returned to `Idle`.
+
+## 13. Reproducing this session
 
 ```bash
 # Passive; cannot affect the machine.

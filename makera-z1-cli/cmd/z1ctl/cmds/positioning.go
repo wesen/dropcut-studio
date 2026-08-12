@@ -2,12 +2,14 @@ package cmds
 
 import (
 	"context"
+	"time"
 
 	"github.com/go-go-golems/glazed/pkg/cmds"
 	"github.com/go-go-golems/glazed/pkg/cmds/fields"
 	"github.com/go-go-golems/glazed/pkg/cmds/schema"
 	"github.com/go-go-golems/glazed/pkg/cmds/values"
 	"github.com/go-go-golems/glazed/pkg/middlewares"
+	"github.com/go-go-golems/glazed/pkg/types"
 	"github.com/pkg/errors"
 
 	"github.com/go-go-golems/makera-z1-cli/pkg/makera"
@@ -50,10 +52,70 @@ Examples:
 func (c *HomeCommand) RunIntoGlazeProcessor(
 	ctx context.Context, vals *values.Values, gp middlewares.Processor,
 ) error {
-	return runMotionRequest(ctx, vals, gp, makera.MotionRequest{
+	req := makera.MotionRequest{
 		Ops:    []makera.MotionOp{makera.Home()},
 		Reason: "operator homing from CLI",
-	})
+	}
+	f, err := decodeMotionFlags(vals)
+	if err != nil {
+		return err
+	}
+	if f.DryRun {
+		return emitDryRun(ctx, gp, req)
+	}
+	if !f.Confirm {
+		return errors.New("refusing: homing moves ALL axes at speed. Inspect with --dry-run, then re-run with --confirm, standing at the machine")
+	}
+
+	client, err := DialFrom(ctx, vals)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = client.Close() }()
+
+	res, err := client.Motion(ctx, req, makera.PreflightOptions{AllowOpenCover: f.AllowOpenCover})
+	if err != nil {
+		return err
+	}
+
+	// The firmware prints ok to $H unconditionally, and the first $H after a
+	// hold episode can be silently consumed clearing residual state
+	// (observed on hardware 2026-08-12; MZ1-001 observations §12). Detect
+	// the no-op instead of reporting success that did not happen.
+	if res.StateAfter.State != "Home" && !res.StateAfter.Homed {
+		return errors.Errorf(
+			"homing did not start: the machine accepted $H and did nothing (state %s, still unhomed). "+
+				"Known firmware behaviour after a hold episode — run `z1ctl home --confirm` again",
+			res.StateAfter.State)
+	}
+
+	// Homing runs for tens of seconds and the unhomed sentinel clears at the
+	// START of the cycle, so "homed" is only trustworthy once the state has
+	// left Home. Watch it finish; re-reads only.
+	st := res.StateAfter
+	deadline := time.Now().Add(3 * time.Minute)
+	for st.State == "Home" {
+		if time.Now().After(deadline) {
+			return errors.New("homing still running after 3 minutes; check the machine")
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(1 * time.Second):
+		}
+		if st, err = client.QueryStatus(ctx); err != nil {
+			return errors.Wrap(err, "lost the machine while homing ran; the cycle continues on the machine")
+		}
+	}
+
+	return gp.AddRow(ctx, types.NewRow(
+		types.MRP("command", "$H"),
+		types.MRP("state_after", st.State),
+		types.MRP("homed", st.Homed && st.State != "Home"),
+		types.MRP("mx", st.Machine.X),
+		types.MRP("my", st.Machine.Y),
+		types.MRP("mz", st.Machine.Z),
+	))
 }
 
 // GotoCommand is an absolute rapid move.

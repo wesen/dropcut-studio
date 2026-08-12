@@ -196,10 +196,41 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 			"error": "refused: homing moves ALL axes at speed and needs the two-step confirmation"})
 		return
 	}
-	s.runMotion(w, r, makera.MotionRequest{
-		Ops:    []makera.MotionOp{makera.Home()},
-		Reason: "operator homing from control page",
-	}, makera.PreflightOptions{})
+	if !s.motionBusy.CompareAndSwap(false, true) {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error": "a motion request is already in flight; requests are never queued"})
+		return
+	}
+	defer s.motionBusy.Store(false)
+
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	var res makera.MotionResult
+	err := s.withClient(ctx, func(c *makera.Client) error {
+		var err error
+		res, err = c.Motion(ctx, makera.MotionRequest{
+			Ops:    []makera.MotionOp{makera.Home()},
+			Reason: "operator homing from control page",
+		}, makera.PreflightOptions{})
+		return err
+	})
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	// The first $H after a hold episode can be silently consumed by the
+	// firmware (MZ1-001 observations §12). Tell the operator instead of
+	// reporting a success that did not happen; the page's status poll shows
+	// the Home state while a real cycle runs.
+	if res.StateAfter.State != "Home" && !res.StateAfter.Homed {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error": "homing did not start: the machine accepted $H and did nothing — known firmware behaviour after a hold; press HOME again"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok": true, "sent": res.Sent, "state_after": res.StateAfter.State,
+		"note": "homing runs for tens of seconds; the header shows Home until it finishes",
+	})
 }
 
 type spindleBody struct {
