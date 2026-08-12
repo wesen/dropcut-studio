@@ -103,6 +103,8 @@ func TestReadOnlyCommandsAreAllowed(t *testing.T) {
 		// Bare forms are queries; see writeWithArgs.
 		"time",
 		"wlan -e",
+		// M957 only prints spindle telemetry; the readout half of M958 tuning.
+		"M957",
 		// Query form of switch stays below the refusal line? No — bare switch
 		// queries, but the verb is uniformly refused; see classByVerb. This
 		// list pins only genuine reads.

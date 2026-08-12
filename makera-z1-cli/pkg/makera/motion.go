@@ -603,6 +603,32 @@ func (o zeroOp) Describe() string {
 	return fmt.Sprintf("zero work offset G5%d on %s at current position", 3+o.system, strings.Join(letters, ","))
 }
 
+type spindlePIDOp struct{ p, i, d float64 }
+
+// SpindlePID sets the spindle controller gains at runtime: `M958 P… I… D…`.
+// On the Z1's stock loop only P does anything — it is the INTEGRAL gain of a
+// velocity-form loop despite the name (duty += P*error per tick); I is dead
+// code and D is Carvera-Air-only. Gains are runtime state, not persisted.
+// Class 2: changing gains under a spinning cutter changes its behaviour, so
+// this is confirmed and preflighted (which also refuses it mid-job).
+func SpindlePID(pTerm, iTerm, dTerm float64) (MotionOp, error) {
+	for _, v := range []float64{pTerm, iTerm, dTerm} {
+		if v < 0 || v > 1 {
+			return nil, errors.Errorf("gain %v outside [0, 1] (default is 0.0001; these multiply RPM error into PWM duty)", v)
+		}
+	}
+	return spindlePIDOp{p: pTerm, i: iTerm, d: dTerm}, nil
+}
+
+func (o spindlePIDOp) render() []string {
+	return []string{fmt.Sprintf("M958 P%s I%s D%s", num(o.p), num(o.i), num(o.d))}
+}
+func (o spindlePIDOp) class() RiskClass    { return ClassStateEnabling }
+func (o spindlePIDOp) requiresHomed() bool { return false }
+func (o spindlePIDOp) Describe() string {
+	return fmt.Sprintf("set spindle gains P=%s I=%s D=%s (runtime only)", num(o.p), num(o.i), num(o.d))
+}
+
 type playOp struct{ path string }
 
 // PlayFile starts a stored program: `play /sd/gcodes/part.nc`. Effectively

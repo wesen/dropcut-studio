@@ -124,6 +124,9 @@ var wlanReadOnlyArgs = map[string]bool{"-e": true}
 // demonstrably read-only on this firmware.
 var readOnlyExceptions = map[string]bool{
 	"md5sum": true, "mem": true, "model": true,
+	// M957 only prints spindle telemetry (state, current/target RPM, PWM
+	// value — SpindleControl.cpp): the readout half of the M958 tuning pair.
+	"m957": true,
 }
 
 // accessoryMCodes are M-codes that switch an output which cannot cut anyone.

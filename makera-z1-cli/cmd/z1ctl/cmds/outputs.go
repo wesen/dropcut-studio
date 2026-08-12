@@ -28,8 +28,11 @@ type SpindleCommand struct{ *cmds.CommandDescription }
 var _ cmds.GlazeCommand = &SpindleCommand{}
 
 type spindleSettings struct {
-	State string `glazed:"state"`
-	RPM   int    `glazed:"rpm"`
+	State string  `glazed:"state"`
+	RPM   int     `glazed:"rpm"`
+	P     float64 `glazed:"p"`
+	I     float64 `glazed:"i"`
+	D     float64 `glazed:"d"`
 }
 
 func NewSpindleCommand() (*SpindleCommand, error) {
@@ -39,27 +42,45 @@ func NewSpindleCommand() (*SpindleCommand, error) {
 	}
 	return &SpindleCommand{cmds.NewCommandDescription(
 		"spindle",
-		cmds.WithShort("Spindle on (requires --confirm) or off (never gated)"),
-		cmds.WithLong(`Switch the spindle.
+		cmds.WithShort("Spindle on/off, telemetry, and controller gains"),
+		cmds.WithLong(`Switch, watch and tune the spindle.
 
   z1ctl spindle on --rpm 12000 --confirm
   z1ctl spindle off
+  z1ctl spindle report                        M957: current/target RPM + PWM duty
+  z1ctl spindle pid --p 0.0002 --confirm      M958: set controller gains (runtime only)
 
 'on' is motion-class: M3 starts a carbide cutter at speed, so it preflights
 (cover closed, no alarm, e-stop clear) and requires --confirm.
 
 'off' is a stop. Stops are never gated: no confirmation, no preflight, works
-in any machine state.`),
+in any machine state.
+
+'pid' tunes the speed loop live. On the Z1's stock firmware only P does
+anything, and it is the INTEGRAL gain of a velocity-form loop despite its
+name (duty += P*error per tick; default 0.0001) — raising it speeds the ramp
+and worsens overshoot. I is dead code, D is Carvera-Air-only. Gains reset on
+power cycle. No gain can make the spindle regulate below the motor's
+physical minimum.`),
 		cmds.WithArguments(
 			fields.New("state", fields.TypeChoice,
-				fields.WithChoices("on", "off"),
+				fields.WithChoices("on", "off", "report", "pid"),
 				fields.WithIsArgument(true),
-				fields.WithHelp("on or off")),
+				fields.WithHelp("on, off, report (M957) or pid (M958)")),
 		),
 		cmds.WithFlags(append(motionFlagDefs(),
 			fields.New("rpm", fields.TypeInteger,
 				fields.WithDefault(10000),
 				fields.WithHelp("Spindle speed for 'on', RPM")),
+			fields.New("p", fields.TypeFloat,
+				fields.WithDefault(0.0001),
+				fields.WithHelp("M958 P gain (the only effective one on stock Z1; integral action)")),
+			fields.New("i", fields.TypeFloat,
+				fields.WithDefault(0.0001),
+				fields.WithHelp("M958 I gain (dead code on stock firmware; kept for symmetry)")),
+			fields.New("d", fields.TypeFloat,
+				fields.WithDefault(0.0001),
+				fields.WithHelp("M958 D gain (Carvera-Air-only in stock firmware)")),
 		)...),
 		cmds.WithSections(conn),
 	)}, nil
@@ -72,8 +93,27 @@ func (c *SpindleCommand) RunIntoGlazeProcessor(
 	if err := vals.DecodeSectionInto(schema.DefaultSlug, s); err != nil {
 		return errors.Wrap(err, "decode settings")
 	}
+	if s.State == "report" {
+		client, err := DialFrom(ctx, vals)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = client.Close() }()
+		lines, err := client.CommandText(ctx, "M957")
+		if err != nil {
+			return err
+		}
+		for _, l := range lines {
+			if err := gp.AddRow(ctx, types.NewRow(types.MRP("report", l))); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
 	var op makera.MotionOp
-	if s.State == "on" {
+	switch s.State {
+	case "on":
 		var err error
 		if op, err = makera.SpindleOn(s.RPM); err != nil {
 			return err
@@ -81,7 +121,12 @@ func (c *SpindleCommand) RunIntoGlazeProcessor(
 		if warn := makera.SpindleRPMWarning(s.RPM); warn != "" {
 			fmt.Fprintf(os.Stderr, "z1ctl: WARNING: %s\n", warn)
 		}
-	} else {
+	case "pid":
+		var err error
+		if op, err = makera.SpindlePID(s.P, s.I, s.D); err != nil {
+			return err
+		}
+	default:
 		op = makera.SpindleOff()
 	}
 	return runMotionRequest(ctx, vals, gp, makera.MotionRequest{
