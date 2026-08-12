@@ -44,7 +44,14 @@ Step jog sends one bounded relative move and is the form to use from the
 command line:
 
   z1ctl jog X 10 --confirm             10 mm in +X at the default feed
-  z1ctl jog Z -0.1 --feed 300 --confirm
+  z1ctl jog Z-0.1 --feed 300 --confirm
+
+Negative distances: a bare "-0.1" is read as flags by the argument parser, so
+write the axis and distance as ONE token ($J style), or end flag parsing with
+"--":
+
+  z1ctl jog X-0.1 --confirm
+  z1ctl jog --confirm -- X -0.1
 
 Continuous jog moves while THIS PROCESS emits keepalives and stops when they
 cease — the firmware's own dead-man. From a CLI the hold is expressed as a
@@ -62,10 +69,11 @@ machine is in Alarm, or while a job is running.`),
 		cmds.WithArguments(
 			fields.New("axis", fields.TypeString,
 				fields.WithIsArgument(true),
-				fields.WithHelp("Axis: X, Y, Z, A or B")),
+				fields.WithHelp("Axis (X, Y, Z, A, B) or a combined token like X-0.1")),
 			fields.New("distance", fields.TypeString,
 				fields.WithIsArgument(true),
-				fields.WithHelp("Signed distance in mm; with --continuous, a bare + or - direction")),
+				fields.WithDefault(""),
+				fields.WithHelp("Signed distance in mm; with --continuous, a bare + or - direction. May be combined into the axis token")),
 		),
 		cmds.WithFlags(append(motionFlagDefs(),
 			fields.New("feed", fields.TypeFloat,
@@ -89,10 +97,20 @@ func (c *JogCommand) RunIntoGlazeProcessor(
 	if err := vals.DecodeSectionInto(schema.DefaultSlug, s); err != nil {
 		return errors.Wrap(err, "decode settings")
 	}
-	axis, err := makera.ParseAxis(s.Axis)
+	// Accept the combined $J-style token — `jog X-0.1` — because a separate
+	// "-0.1" argument is swallowed by flag parsing before it ever reaches us.
+	axisTok, distTok := s.Axis, s.Distance
+	if distTok == "" {
+		if len(axisTok) < 2 {
+			return errors.Errorf("missing distance: use `jog %s 10`, the combined form `jog %s-0.1`, or `--` before a negative distance", axisTok, axisTok)
+		}
+		axisTok, distTok = axisTok[:1], axisTok[1:]
+	}
+	axis, err := makera.ParseAxis(axisTok)
 	if err != nil {
 		return err
 	}
+	s.Distance = distTok
 
 	if !s.Continuous {
 		dist, err := strconv.ParseFloat(s.Distance, 64)
