@@ -58,12 +58,9 @@ frame-decoder failures across five sessions):
 - alarm clearing (`z1ctl unlock`), the first authorised command
 - framed **download** — verified on hardware over 1 block, 41 blocks, and the
   cache-hit path
-
-Implemented but NOT exercised against hardware:
-
-- framed **upload**. It passes against the fake machine, including out-of-order
-  block requests and retry, but writes to the machine. First real run should be
-  a scratch path with an operator present.
+- framed **upload**, and `fs rm|mv|mkdir` — a full create / upload / download /
+  rename / delete cycle verified on hardware inside a scratch directory, with a
+  byte-identical round trip
 
 Not implemented:
 

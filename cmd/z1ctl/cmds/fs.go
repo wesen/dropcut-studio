@@ -205,15 +205,19 @@ func splitPath(p string) (dir, base string) {
 func NewFsGroup() (*cobra.Command, error) {
 	group := &cobra.Command{
 		Use:   "fs",
-		Short: "Inspect the machine's filesystem",
-		Long: `Read-only filesystem access.
+		Short: "Inspect and modify the machine's filesystem",
+		Long: `Access to the machine's SD card.
 
-'get' downloads through the framed file-transfer protocol. That is the only way
-to read a remote file: the firmware's 'cat' returns "File not found" for every
+Read-only: ls, stat, get.
+Writes:    put, rm, mv, mkdir.
+
+'get' and 'put' use the framed file-transfer protocol. 'get' is the only way to
+read a remote file — the firmware's 'cat' returns "File not found" for every
 file, including ones it has just listed.
 
-Uploading is implemented in the library but has no command yet, because it
-writes to the machine and has not been exercised against hardware.`,
+None of these can cause motion; putting a file on the SD card does not run it.
+What the writes can do is destroy data, so rm and mv verify their effect
+afterwards rather than trusting the firmware's silence on success.`,
 	}
 	ls, err := NewLsCommand()
 	if err != nil {
@@ -227,8 +231,24 @@ writes to the machine and has not been exercised against hardware.`,
 	if err != nil {
 		return nil, err
 	}
+	put, err := NewPutCommand()
+	if err != nil {
+		return nil, err
+	}
+	rm, err := NewRmCommand()
+	if err != nil {
+		return nil, err
+	}
+	mv, err := NewMvCommand()
+	if err != nil {
+		return nil, err
+	}
+	mkdir, err := NewMkdirCommand()
+	if err != nil {
+		return nil, err
+	}
 	if err := cli.AddCommandsToRootCommand(group,
-		[]cmds.Command{ls, stat, get}, nil, parserOptions()...); err != nil {
+		[]cmds.Command{ls, stat, get, put, rm, mv, mkdir}, nil, parserOptions()...); err != nil {
 		return nil, err
 	}
 	return group, nil
