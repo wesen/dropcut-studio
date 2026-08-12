@@ -429,6 +429,22 @@ The rule "a stop that can be refused is not a stop" is implemented in
 
 ### 7.3 Amendment C — the jog keepalive becomes an explicit lease
 
+> **Revised after operator review.** The lease design below was overruled in
+> favour of 1:1 forwarding, and the operator's argument is better than the
+> original: a server that emits keepalives from its own timer has a mechanism
+> that can keep motion alive without a human — a lease-expiry bug fails toward
+> *continuing*. A server that only forwards keepalives the browser sends has
+> no such mechanism — every bug fails toward *stopping*, which is the correct
+> asymmetry for a dead-man. The browser cannot reach the machine directly (the
+> server holds the single TCP connection), so forwarding still transits the
+> server; but each protocol keepalive is now CAUSED by a browser keepalive,
+> and the held button drives the chain end to end. Background-tab throttling
+> stalls the POSTs and stops the axis: annoying, safe, honest. No server
+> watchdog is needed for stopping — the firmware's own dead-man is the stop;
+> the server keeps only enough state to refuse a second jog and to run the
+> polite 0x19/^Y handshake. The original lease argument is preserved below as
+> the record of the road not taken.
+
 ADR-011 is right that the server must own the protocol keepalive and the
 browser's liveness must ride its status poll. The design then says "if that
 poll stops for more than ~500 ms, the server stops the jog". Implementation

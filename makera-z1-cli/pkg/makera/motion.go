@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pkg/errors"
@@ -631,13 +632,32 @@ type JogSession struct {
 	op       MotionOp
 	cancel   context.CancelFunc
 	done     chan struct{}
+	stopping atomic.Bool
 	stopOnce sync.Once
 	stopErr  error
 }
 
-// JogStart begins a continuous jog. Class 1: preflights fresh, refuses a
-// second concurrent jog, and does not require homing (the jog is relative).
+// JogStart begins a continuous jog whose keepalives THIS PROCESS emits on a
+// timer — the caller's liveness is the dead-man, which is right for the CLI,
+// where the process holding the terminal is the held button. Class 1:
+// preflights fresh, refuses a second concurrent jog, and does not require
+// homing (the jog is relative).
 func (c *Client) JogStart(ctx context.Context, axis Axis, positive bool, feed float64, opts PreflightOptions) (*JogSession, error) {
+	return c.jogStart(ctx, axis, positive, feed, opts, true)
+}
+
+// JogStartManual begins a continuous jog whose keepalives the CALLER emits by
+// calling Keepalive — one call, one ?+0x1A write, forwarded 1:1. This is the
+// web server's mode: each protocol keepalive is CAUSED by a browser keepalive
+// from a held button, so no software timer exists that could keep motion
+// alive without a human. When the calls stop — released button, hidden tab,
+// crashed browser — the firmware's own dead-man stops the axis; nothing on
+// the server needs to notice for the machine to be safe.
+func (c *Client) JogStartManual(ctx context.Context, axis Axis, positive bool, feed float64, opts PreflightOptions) (*JogSession, error) {
+	return c.jogStart(ctx, axis, positive, feed, opts, false)
+}
+
+func (c *Client) jogStart(ctx context.Context, axis Axis, positive bool, feed float64, opts PreflightOptions, auto bool) (*JogSession, error) {
 	op, err := ContinuousJog(axis, positive, feed)
 	if err != nil {
 		return nil, err
@@ -672,16 +692,31 @@ func (c *Client) JogStart(ctx context.Context, axis Axis, positive bool, feed fl
 
 	runCtx, cancel := context.WithCancel(context.Background())
 	s := &JogSession{c: c, op: op, cancel: cancel, done: make(chan struct{})}
-	go s.keepalive(runCtx)
+	if auto {
+		go s.keepaliveLoop(runCtx)
+	} else {
+		// No emitter to wait for on stop.
+		close(s.done)
+	}
 	ok = true
 	return s, nil
 }
 
-// keepalive emits the ?+0x1A digram every interval, in ONE write — sending the
-// bytes separately races other traffic and leaves orphaned bytes in the
+// Keepalive forwards one keepalive digram — the manual-mode counterpart of
+// the timer loop. It refuses once a stop has begun, because a keepalive
+// arriving after 0x19 fights the stop.
+func (s *JogSession) Keepalive() error {
+	if s.stopping.Load() {
+		return errors.New("jog is stopping; keepalive refused so it cannot fight the stop")
+	}
+	return s.c.write(s.c.proto.EncodeRealtime(RealtimeStatus, RealtimeJogKeep))
+}
+
+// keepaliveLoop emits the ?+0x1A digram every interval, in ONE write — sending
+// the bytes separately races other traffic and leaves orphaned bytes in the
 // firmware's command buffer. On any write error it stops immediately: ceasing
 // keepalives IS the safe failure, because the firmware then stops the axis.
-func (s *JogSession) keepalive(ctx context.Context) {
+func (s *JogSession) keepaliveLoop(ctx context.Context) {
 	defer close(s.done)
 	tick := time.NewTicker(jogKeepaliveInterval)
 	defer tick.Stop()
@@ -712,8 +747,10 @@ func (s *JogSession) Stop(ctx context.Context) error {
 func (s *JogSession) stop(ctx context.Context) error {
 	defer s.c.jogActive.Store(false)
 
-	// 1. Suppress keepalives and wait until the emitter is actually gone, so
-	//    no keepalive can be written after the stop byte.
+	// 1. Suppress keepalives FIRST — refuse manual ones, cancel the timer
+	//    loop and wait until it is actually gone — so no keepalive can be
+	//    written after the stop byte.
+	s.stopping.Store(true)
 	s.cancel()
 	<-s.done
 

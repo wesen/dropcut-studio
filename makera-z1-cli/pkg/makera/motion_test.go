@@ -346,6 +346,37 @@ func TestJogDeadman(t *testing.T) {
 	_ = s.Stop(context.Background()) // release the client slot
 }
 
+// TestManualJogForwardsKeepalivesOneToOne is the web server's mode: each
+// Keepalive call causes exactly one protocol keepalive, so nothing but a held
+// button can keep motion alive, and ceasing calls stops the axis by the
+// firmware's own dead-man.
+func TestManualJogForwardsKeepalivesOneToOne(t *testing.T) {
+	m := newFakeMachine(nil, 128)
+	c := newFakeClient(t, m)
+
+	s, err := c.JogStartManual(context.Background(), AxisX, true, 600, PreflightOptions{})
+	require.NoError(t, err)
+
+	for i := 0; i < 3; i++ {
+		require.NoError(t, s.Keepalive())
+		time.Sleep(50 * time.Millisecond)
+	}
+	m.mu.Lock()
+	count := len(m.jogKeepTimes)
+	m.mu.Unlock()
+	assert.Equal(t, 3, count, "one Keepalive call, one protocol keepalive — no timer adds extras")
+	assert.True(t, m.jogActiveNow())
+
+	// Cease calling: the firmware's dead-man stops the axis with no server
+	// watchdog involved.
+	time.Sleep(m.jogDeadman + 200*time.Millisecond)
+	assert.False(t, m.jogActiveNow())
+
+	// The polite stop still works, and keepalives are refused once it begins.
+	require.NoError(t, s.Stop(context.Background()))
+	assert.Error(t, s.Keepalive(), "a keepalive after stop would fight the stop")
+}
+
 func TestSecondConcurrentJogIsRefused(t *testing.T) {
 	m := newFakeMachine(nil, 128)
 	c := newFakeClient(t, m)
