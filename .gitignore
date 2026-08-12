@@ -8,3 +8,8 @@ dist/
 # ticket as research evidence. They have their own history and are not ours to
 # vendor; docs cite them by path, and README/NOTICE record how to re-clone.
 ttmp/**/vendor/
+# EXCEPT MZ1-003's vendor: it holds only trimmed, line-cited source excerpts
+# (~0.5MB with provenance README + COPYING), not full clones. Cited evidence
+# at pinned commits belongs in the repo; full trees stay re-clonable.
+!ttmp/2026/08/11/MZ1-003--motion-and-job-control-with-a-manual-control-ui/vendor/
+!ttmp/2026/08/11/MZ1-003--motion-and-job-control-with-a-manual-control-ui/vendor/**
