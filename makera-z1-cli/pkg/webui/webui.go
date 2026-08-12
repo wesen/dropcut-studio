@@ -103,6 +103,12 @@ func (s *Server) Handler() (http.Handler, error) {
 	mux.HandleFunc("POST /api/unlock", s.mutating(s.handleUnlock))
 	mux.HandleFunc("POST /api/hold", s.mutating(s.handleHold))
 	mux.HandleFunc("POST /api/cycle-start", s.mutating(s.handleCycleStart))
+
+	// Camera: a separate service on the machine's WiFi module; read-only
+	// stream, resolution is the only setting.
+	mux.HandleFunc("GET /api/camera", s.handleCameraProbe)
+	mux.HandleFunc("GET /api/camera/stream", s.handleCameraStream)
+	mux.HandleFunc("POST /api/camera/resolution", s.mutating(s.handleCameraResolution))
 	return mux, nil
 }
 

@@ -103,5 +103,11 @@ func Register(root *cobra.Command) error {
 	}
 	root.AddCommand(protoGroup)
 
+	cameraGroup, err := NewCameraGroup()
+	if err != nil {
+		return errors.Wrap(err, "build camera group")
+	}
+	root.AddCommand(cameraGroup)
+
 	return nil
 }

@@ -116,6 +116,7 @@
             <button class="tab active" data-tab="files">Files</button>
             <button class="tab" data-tab="checks">Checks</button>
             <button class="tab" data-tab="machine">Machine</button>
+            <button class="tab" data-tab="camera">Camera</button>
             <button class="tab" data-tab="raw">Raw</button>
           </div>
 
@@ -141,6 +142,22 @@
 
             <div class="tabpane" id="tab-machine">
               <div class="rows" id="machine"><div class="empty">loading…</div></div>
+            </div>
+
+            <div class="tabpane" id="tab-camera">
+              <div class="toolbar">
+                <span class="dim">resolution</span>
+                <select id="camRes">
+                  <option value="10" selected>640x480</option>
+                  <option value="11">800x600</option>
+                  <option value="12">1024x768</option>
+                  <option value="13">1280x720</option>
+                  <option value="14">1280x1024</option>
+                  <option value="15">1600x1200</option>
+                </select>
+                <span class="dim" id="camNote">stream starts when this tab is open</span>
+              </div>
+              <div class="camwrap"><img id="camImg" alt="machine camera" /></div>
             </div>
 
             <div class="tabpane" id="tab-raw">

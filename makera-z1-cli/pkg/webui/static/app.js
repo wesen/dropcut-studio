@@ -557,7 +557,31 @@ document.querySelectorAll(".tab").forEach((tab) => {
     document.querySelectorAll(".tabpane").forEach((p) => p.classList.remove("active"));
     tab.classList.add("active");
     $(`tab-${tab.dataset.tab}`).classList.add("active");
+    // The camera stream runs only while its tab is visible: setting src
+    // opens the WebSocket bridge on the server, clearing it closes it.
+    if (tab.dataset.tab === "camera") {
+      $("camImg").src = "/api/camera/stream?t=" + Date.now();
+      $("camNote").textContent = "live — closes when you leave this tab";
+    } else if ($("camImg").getAttribute("src")) {
+      $("camImg").removeAttribute("src");
+      $("camNote").textContent = "stream starts when this tab is open";
+    }
   });
+});
+
+$("camImg").addEventListener("error", () => {
+  if ($("camImg").getAttribute("src")) {
+    $("camNote").textContent = "no camera answered on port 82";
+  }
+});
+
+$("camRes").addEventListener("change", async (e) => {
+  try {
+    await post("/api/camera/resolution", { value: Number(e.target.value) });
+    $("camNote").textContent = "resolution set — the stream adopts it within a frame or two";
+  } catch (err) {
+    $("camNote").textContent = err.message;
+  }
 });
 
 $("interval").addEventListener("change", (e) => setInterval_(Number(e.target.value)));
