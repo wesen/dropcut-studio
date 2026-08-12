@@ -2,6 +2,8 @@ package cmds
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -24,7 +26,9 @@ import (
 type ServeCommand struct{ *cmds.CommandDescription }
 
 type serveSettings struct {
-	Addr string `glazed:"addr"`
+	Addr        string `glazed:"addr"`
+	AllowRemote bool   `glazed:"allow-remote"`
+	Token       string `glazed:"token"`
 }
 
 var _ cmds.BareCommand = &ServeCommand{}
@@ -37,25 +41,43 @@ func NewServeCommand() (*ServeCommand, error) {
 	return &ServeCommand{cmds.NewCommandDescription(
 		"serve",
 		cmds.WithShort("Serve the hardware control web page"),
-		cmds.WithLong(`Serve a browser page showing live machine telemetry.
+		cmds.WithLong(`Serve the browser control page: live telemetry, manual jog,
+homing, spindle and accessories, work-zeroing, and job control.
 
-The page is READ-ONLY. Every endpoint is a GET and none of them can move the
-machine: it shows position, spindle and feed, job progress, the file listing,
-preflight checks and the raw status report. Motion controls are rendered but
-disabled, with the reason stated in the page.
+THIS PAGE CAN MOVE THE MACHINE, so the server defaults to loopback only
+(127.0.0.1:8080). An unauthenticated POST from the LAN would otherwise be a
+motion command — the machine itself has no authentication, and this server
+must not widen that. To reach it from a tablet on the shop network:
 
-The machine accepts exactly one TCP connection, so this server holds a single
-session and serialises every request onto it. Several browser tabs share that
-one connection rather than competing for it — but while this server runs,
-Makera's own controller cannot connect.
+  z1ctl serve --addr :8080 --allow-remote
+
+which requires the X-Z1-Token header on every mutating request; the token is
+printed at startup and embedded in the page link. Same-origin and Host
+checks apply in every mode.
+
+Every motion route preflights on the machine, fresh, no matter what the page
+claims to have checked. Stops — hold, jog stop, suspend, abort — are never
+gated by machine state. Continuous jog keepalives are browser-held: when the
+page stops posting them (released button, hidden tab, crash), the firmware's
+own dead-man stops the axis.
+
+The machine accepts exactly one TCP connection; this server holds it, and
+Makera's own controller cannot connect while it runs.
 
 Examples:
   z1ctl serve
-  z1ctl serve --addr :9090 --device 192.168.0.55`),
+  z1ctl serve --addr 127.0.0.1:9090 --device 192.168.0.55
+  z1ctl serve --addr :8080 --allow-remote`),
 		cmds.WithFlags(
 			fields.New("addr", fields.TypeString,
-				fields.WithDefault(":8080"),
-				fields.WithHelp("Listen address")),
+				fields.WithDefault("127.0.0.1:8080"),
+				fields.WithHelp("Listen address. Non-loopback requires --allow-remote")),
+			fields.New("allow-remote", fields.TypeBool,
+				fields.WithDefault(false),
+				fields.WithHelp("Permit a non-loopback bind; enforces the startup token on mutating routes")),
+			fields.New("token", fields.TypeString,
+				fields.WithDefault(""),
+				fields.WithHelp("Fix the mutation token instead of minting one at startup")),
 		),
 		cmds.WithSections(conn),
 	)}, nil
@@ -75,7 +97,29 @@ func (c *ServeCommand) Run(ctx context.Context, vals *values.Values) error {
 		return err
 	}
 
-	server := webui.New(opts, log.Logger)
+	loopback, err := isLoopbackAddr(s.Addr)
+	if err != nil {
+		return err
+	}
+	if !loopback && !s.AllowRemote {
+		return fmt.Errorf(
+			"refusing to bind %q: this page can move the machine, and a non-loopback bind exposes that to the network. Pass --allow-remote to accept that deliberately",
+			s.Addr)
+	}
+
+	token := s.Token
+	if token == "" {
+		raw := make([]byte, 16)
+		if _, err := rand.Read(raw); err != nil {
+			return err
+		}
+		token = hex.EncodeToString(raw)
+	}
+
+	server := webui.New(opts, log.Logger, webui.Config{
+		Token:        token,
+		EnforceToken: !loopback,
+	})
 	defer server.Close()
 
 	handler, err := server.Handler()
@@ -94,7 +138,14 @@ func (c *ServeCommand) Run(ctx context.Context, vals *values.Values) error {
 
 	fmt.Fprintf(os.Stderr, "z1ctl: serving hardware control for %s on http://%s\n",
 		opts.Address, ln.Addr())
-	fmt.Fprintf(os.Stderr, "z1ctl: read-only — this page cannot move the machine\n")
+	if loopback {
+		fmt.Fprintf(os.Stderr, "z1ctl: loopback only — this page CAN move the machine\n")
+	} else {
+		fmt.Fprintf(os.Stderr, "z1ctl: WARNING: reachable beyond this host and this page CAN move the machine\n")
+		fmt.Fprintf(os.Stderr, "z1ctl: mutating requests require the token: open http://%s/?token=%s\n",
+			ln.Addr(), token)
+	}
+	fmt.Fprintf(os.Stderr, "z1ctl: the machine's PHYSICAL emergency stop is the real one\n")
 
 	// Shut down cleanly so the machine's single connection slot is released
 	// rather than left to time out.
@@ -115,4 +166,22 @@ func (c *ServeCommand) Run(ctx context.Context, vals *values.Values) error {
 		}
 		return err
 	}
+}
+
+// isLoopbackAddr reports whether a listen address binds loopback only.
+func isLoopbackAddr(addr string) (bool, error) {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false, fmt.Errorf("listen address %q: %w", addr, err)
+	}
+	if host == "" {
+		return false, nil // ":8080" binds every interface
+	}
+	if host == "localhost" {
+		return true, nil
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback(), nil
+	}
+	return false, nil
 }

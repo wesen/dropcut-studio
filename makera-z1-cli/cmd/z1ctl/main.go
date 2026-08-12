@@ -99,14 +99,13 @@ func exitCodeFor(err error) int {
 	case errors.Is(err, makera.ErrJobEndedInAlarm):
 		return 3
 	case errors.Is(err, makera.ErrPreflightFailed),
-		errors.Is(err, makera.ErrMotionNotAuthorised):
+		errors.Is(err, makera.ErrMotionNotAuthorised),
+		errors.Is(err, makera.ErrMachineBusy):
 		return 2
 	}
 	msg := err.Error()
 	switch {
 	case containsAny(msg, "not authorised", "refusing"):
-		return 2
-	case containsAny(msg, "machine busy"):
 		return 2
 	default:
 		return 1

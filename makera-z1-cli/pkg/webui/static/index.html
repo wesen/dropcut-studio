@@ -43,27 +43,69 @@
             <div class="row"><span class="key">spindle</span><span class="val" id="spindle">—</span></div>
             <div class="row"><span class="key">tool</span><span class="val" id="tool">—</span></div>
             <div class="row"><span class="key">job</span><span class="val" id="job">idle</span></div>
+            <div class="row jobctl">
+              <span class="key"></span>
+              <span class="val btnrow">
+                <button id="jobPause" disabled>PAUSE</button>
+                <button id="jobResume" class="armable" disabled>RESUME</button>
+                <button id="jobAbort" class="danger" disabled>ABORT</button>
+              </span>
+            </div>
           </div>
 
-          <div class="pane-title">Motion</div>
+          <div class="pane-title">Jog</div>
           <div class="motion" id="motion">
-            <div class="jog">
-              <button disabled>Y+</button>
-              <button disabled>Z+</button>
-              <button disabled>X−</button>
-              <button disabled>X+</button>
-              <button disabled>Y−</button>
-              <button disabled>Z−</button>
-              <button disabled>HOME</button>
-              <button disabled class="danger">HOLD</button>
+            <div class="jogbar">
+              <span class="dim">step</span>
+              <span class="seg" id="stepSeg">
+                <button data-step="0.1">0.1</button>
+                <button data-step="1" class="active">1</button>
+                <button data-step="10">10</button>
+                <button data-step="hold">hold</button>
+              </span>
+              <span class="dim">feed</span>
+              <input id="jogFeed" value="600" size="5" inputmode="numeric" />
+              <label class="chk"><input type="checkbox" id="allowOpenCover" /> cover open ok</label>
             </div>
-            <div class="note error">
-              <b>Motion is disabled in this build.</b>
-              The controls above are shown so the eventual layout is visible, but
-              nothing is wired to the machine. Motion will be enabled only after
-              the diagnose <code>E:</code> endstop mapping is confirmed on
-              hardware — the cover-interlock bit cannot currently be located, and
-              a preflight that cannot verify the cover is not a preflight.
+            <div class="jog" id="jogpad">
+              <button data-axis="Y" data-dir="1"  class="jb" style="grid-area: yp">Y+</button>
+              <button data-axis="Z" data-dir="1"  class="jb" style="grid-area: zp">Z+</button>
+              <button data-axis="A" data-dir="1"  class="jb" style="grid-area: ap">A+</button>
+              <button data-axis="X" data-dir="-1" class="jb" style="grid-area: xm">X−</button>
+              <button data-axis="X" data-dir="1"  class="jb" style="grid-area: xp">X+</button>
+              <button data-axis="Y" data-dir="-1" class="jb" style="grid-area: ym">Y−</button>
+              <button data-axis="Z" data-dir="-1" class="jb" style="grid-area: zm">Z−</button>
+              <button data-axis="A" data-dir="-1" class="jb" style="grid-area: am">A−</button>
+            </div>
+            <div class="note" id="motionNote">checking machine state…</div>
+          </div>
+
+          <div class="pane-title">Spindle · accessories · zero</div>
+          <div class="rows">
+            <div class="row">
+              <span class="key">spindle</span>
+              <span class="val btnrow">
+                <input id="rpm" value="10000" size="6" inputmode="numeric" />
+                <button id="spindleOn" class="armable">START</button>
+                <button id="spindleOff" class="danger">STOP</button>
+              </span>
+            </div>
+            <div class="row">
+              <span class="key">outputs</span>
+              <span class="val btnrow">
+                <button class="acc" data-acc="light">light</button>
+                <button class="acc" data-acc="vacuum">vacuum</button>
+                <button class="acc" data-acc="air">air</button>
+              </span>
+            </div>
+            <div class="row">
+              <span class="key">zero G54</span>
+              <span class="val btnrow">
+                <button class="zero armable" data-zero="X">X=0</button>
+                <button class="zero armable" data-zero="Y">Y=0</button>
+                <button class="zero armable" data-zero="Z">Z=0</button>
+                <span class="dim">sets offset so HERE becomes zero</span>
+              </span>
             </div>
           </div>
         </section>
@@ -86,6 +128,11 @@
                 <span class="dim" id="filesNote"></span>
               </div>
               <div class="rows" id="files"><div class="empty">loading…</div></div>
+              <div class="toolbar playbar">
+                <span class="dim" id="selName">select a file to play</span>
+                <span class="spacer"></span>
+                <button id="playBtn" class="armable" disabled>▶ PLAY</button>
+              </div>
             </div>
 
             <div class="tabpane" id="tab-checks">
@@ -110,14 +157,18 @@
       </div>
 
       <footer class="transport">
+        <button id="hold" class="holdbtn">█ FEED HOLD</button>
+        <button id="homeBtn" class="armable">⌂ HOME</button>
+        <button id="unlockBtn" class="armable" hidden>UNLOCK</button>
+        <span class="dim safety-note">software stops are a convenience — the machine's physical e-stop is the real one</span>
+        <span class="spacer"></span>
         <span class="dim">poll</span>
         <select id="interval">
-          <option value="500">500 ms</option>
-          <option value="1000" selected>1 s</option>
-          <option value="2000">2 s</option>
+          <option value="250">250 ms</option>
+          <option value="500" selected>500 ms</option>
+          <option value="1000">1 s</option>
           <option value="0">paused</option>
         </select>
-        <span class="spacer"></span>
         <span class="dim" id="tick">—</span>
       </footer>
     </div>

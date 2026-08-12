@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/pkg/errors"
@@ -26,9 +27,11 @@ type Transport interface {
 	Describe() string
 }
 
-// ErrMachineBusy is returned when the machine refuses the connection, which on
-// this hardware means another client already holds the single available slot.
-var ErrMachineBusy = errors.New("machine busy: another controller holds the connection")
+// ErrMachineBusy is returned when the machine actively refuses the connection.
+// On this hardware that USUALLY means another client holds the single
+// available slot — but a refusal is only evidence, not proof: a wrong address
+// refuses too, so the message says "likely" rather than asserting it.
+var ErrMachineBusy = errors.New("if this is the machine and it is on, another controller likely holds its single connection slot")
 
 // TCPTransport is the Wi-Fi link.
 type TCPTransport struct {
@@ -47,8 +50,12 @@ func DialTCP(ctx context.Context, addr string, connectTimeout, readTimeout time.
 	d := net.Dialer{Timeout: connectTimeout}
 	conn, err := d.DialContext(ctx, "tcp", addr)
 	if err != nil {
-		var opErr *net.OpError
-		if errors.As(err, &opErr) {
+		// Only an active refusal suggests the single connection slot is
+		// taken — and even that is a likelihood, not a certainty (a host
+		// that is not the machine also refuses). Timeouts and unreachable
+		// hosts are just that, and labelling them "busy" sends the operator
+		// hunting for a controller that is not running.
+		if errors.Is(err, syscall.ECONNREFUSED) {
 			return nil, errors.Wrapf(ErrMachineBusy, "dial %s: %v", addr, err)
 		}
 		return nil, errors.Wrapf(err, "dial %s", addr)

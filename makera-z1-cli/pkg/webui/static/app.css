@@ -189,14 +189,63 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 /* -------------------------------- motion --------------------------------- */
 
 .motion { padding: 4px 0 12px; }
+
+.jogbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 0;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+}
+.jogbar .seg { display: inline-flex; }
+.jogbar .seg button { border-radius: 0; padding: 4px 9px; }
+.jogbar .seg button:first-child { border-radius: 3px 0 0 3px; }
+.jogbar .seg button:last-child { border-radius: 0 3px 3px 0; }
+.jogbar .seg button.active { background: var(--amber); color: #14100a; border-color: var(--amber); font-weight: 700; }
+.jogbar input { width: 58px; text-align: right; }
+.chk { color: var(--dim); display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+
 .jog {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-areas:
+    ".  yp .  zp ap"
+    "xm .  xp zm am"
+    ".  ym .  .  .";
+  grid-template-columns: repeat(5, 1fr);
   gap: 6px;
   padding: 12px 14px 2px;
 }
-.jog button { padding: 9px 0; text-align: center; letter-spacing: 0.06em; }
-.jog button.danger { color: var(--err); border-color: #3a2530; }
+.jog button { padding: 12px 0; text-align: center; letter-spacing: 0.06em; font-size: 14px; }
+.jog button:active:not(:disabled),
+.jog button.jogging {
+  background: var(--amber);
+  color: #14100a;
+  border-color: var(--amber);
+  font-weight: 700;
+}
+.jog button { touch-action: none; user-select: none; -webkit-user-select: none; }
+
+.btnrow { display: inline-flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+button.danger { color: var(--err); border-color: #3a2530; }
+button.armed { background: var(--warn); color: #14100a; border-color: var(--warn); font-weight: 700; }
+button.on { background: var(--green); color: #0a140e; border-color: var(--green); font-weight: 700; }
+
+.holdbtn {
+  color: #14100a;
+  background: var(--err);
+  border-color: var(--err);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  padding: 8px 18px;
+  font-size: 13px;
+}
+.holdbtn:hover { filter: brightness(1.1); border-color: var(--err); }
+.safety-note { font-size: 10.5px; }
+
+.playbar { border-top: 1px solid var(--line); border-bottom: none; }
+.row.selected { background: #ffb10014; outline: 1px solid #ffb10033; }
+.row.selectable { cursor: pointer; }
 
 /* -------------------------------- panels --------------------------------- */
 

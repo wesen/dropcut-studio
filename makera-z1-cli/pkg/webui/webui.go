@@ -1,9 +1,12 @@
 // Package webui serves the hardware control page.
 //
-// The page is read-only telemetry. Motion controls are rendered but disabled,
-// with the reason shown in the interface rather than hidden, because a control
-// that looks operable and silently does nothing is worse than one that explains
-// itself.
+// Since MZ1-003 the page can MOVE THE MACHINE: manual jog, homing, spindle,
+// accessories, work-zeroing and job control, on top of the original
+// telemetry. The mutation surface and its guards live in motion.go; the rule
+// throughout is that the browser is never trusted — every motion route
+// preflights the machine fresh, and every control the page disables carries
+// the reason, because a control that looks operable and silently does nothing
+// is worse than one that explains itself.
 //
 // The machine accepts exactly one TCP connection, so this server holds a single
 // session and serialises every request onto it. Two browser tabs share one
@@ -17,6 +20,7 @@ import (
 	"io/fs"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pkg/errors"
@@ -32,10 +36,19 @@ var staticFS embed.FS
 type Server struct {
 	opts   makera.Options
 	logger zerolog.Logger
+	cfg    Config
 
 	mu     sync.Mutex
 	client *makera.Client
 	info   makera.MachineInfo
+
+	// motionBusy enforces one motion request in flight; overlap answers 409.
+	motionBusy atomic.Bool
+
+	// jog is the active continuous-jog session, if any. Its keepalives are
+	// browser-driven (see motion.go); the server never emits one on a timer.
+	jogMu sync.Mutex
+	jog   *makera.JogSession
 
 	cacheMu   sync.RWMutex
 	lastFiles []makera.DirEntry
@@ -44,8 +57,8 @@ type Server struct {
 }
 
 // New builds a server bound to one machine address.
-func New(opts makera.Options, logger zerolog.Logger) *Server {
-	return &Server{opts: opts, logger: logger}
+func New(opts makera.Options, logger zerolog.Logger, cfg Config) *Server {
+	return &Server{opts: opts, logger: logger, cfg: cfg}
 }
 
 // Handler builds the HTTP routes.
@@ -72,6 +85,23 @@ func (s *Server) Handler() (http.Handler, error) {
 	mux.HandleFunc("GET /api/info", s.handleInfo)
 	mux.HandleFunc("GET /api/files", s.handleFiles)
 	mux.HandleFunc("GET /api/doctor", s.handleDoctor)
+
+	// Mutating routes: every one passes guardMutation; every motion-class one
+	// preflights server-side regardless of what the page believes.
+	mux.HandleFunc("POST /api/jog", s.mutating(s.handleJogStep))
+	mux.HandleFunc("POST /api/jog/start", s.mutating(s.handleJogStart))
+	mux.HandleFunc("POST /api/jog/keep", s.mutating(s.handleJogKeep))
+	mux.HandleFunc("POST /api/jog/stop", s.mutating(s.handleJogStop))
+	mux.HandleFunc("POST /api/home", s.mutating(s.handleHome))
+	mux.HandleFunc("POST /api/spindle", s.mutating(s.handleSpindle))
+	mux.HandleFunc("POST /api/accessory", s.mutating(s.handleAccessory))
+	mux.HandleFunc("POST /api/wcs/zero", s.mutating(s.handleWcsZero))
+	mux.HandleFunc("POST /api/job/play", s.mutating(s.handleJobPlay))
+	mux.HandleFunc("POST /api/job/suspend", s.mutating(s.handleJobSuspend))
+	mux.HandleFunc("POST /api/job/resume", s.mutating(s.handleJobResume))
+	mux.HandleFunc("POST /api/job/abort", s.mutating(s.handleJobAbort))
+	mux.HandleFunc("POST /api/unlock", s.mutating(s.handleUnlock))
+	mux.HandleFunc("POST /api/hold", s.mutating(s.handleHold))
 	return mux, nil
 }
 
@@ -83,6 +113,10 @@ func (s *Server) Close() {
 }
 
 func (s *Server) dropLocked() {
+	// A dying session takes any active jog's bookkeeping with it. The axis is
+	// safe regardless: keepalives cannot reach a dead connection, so the
+	// firmware's dead-man stops it (review §6.5).
+	s.clearJogLocked()
 	if s.client != nil {
 		_ = s.client.Close()
 		s.client = nil
