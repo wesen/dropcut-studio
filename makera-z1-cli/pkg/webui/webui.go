@@ -319,8 +319,10 @@ func (s *Server) handleDoctor(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		checks = append(checks, checkPayload{"machine state", statusOf(st.State == "Idle"), st.State})
-		checks = append(checks, checkPayload{"homed", statusOf(st.Homed),
-			pick(st.Homed, "reference established", "unhomed; machine coordinates are not meaningful")})
+		checks = append(checks, checkPayload{"homing", pick(st.AtRestPosition, "unknown", "ok"),
+			pick(st.AtRestPosition,
+				"position is -1,-1,-1: parked at home OR never homed — stock firmware cannot say; home first if unsure",
+				"position has moved since boot or homing")})
 
 		d, err := c.QueryDiagnose(ctx)
 		if err != nil {

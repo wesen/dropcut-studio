@@ -23,7 +23,9 @@ import (
 func StatusRow(s makera.Status, wcs string) types.Row {
 	row := types.NewRow(
 		types.MRP("state", s.State),
-		types.MRP("homed", s.Homed),
+		// -1,-1,-1 is both the boot position and the post-homing rest
+		// position; stock firmware never reports homing (observations §12).
+		types.MRP("at_rest", s.AtRestPosition),
 		types.MRP("mx", s.Machine.X), types.MRP("my", s.Machine.Y),
 		types.MRP("mz", s.Machine.Z), types.MRP("ma", s.Machine.A),
 		types.MRP("mb", s.Machine.B),

@@ -105,7 +105,7 @@ func runMotionRequest(ctx context.Context, vals *values.Values, gp middlewares.P
 			types.MRP("sent", true),
 			types.MRP("reply", strings.Join(res.Replies, " | ")),
 			types.MRP("state_after", res.StateAfter.State),
-			types.MRP("homed", res.StateAfter.Homed),
+			types.MRP("at_rest", res.StateAfter.AtRestPosition),
 		)); err != nil {
 			return err
 		}

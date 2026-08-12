@@ -166,6 +166,6 @@ func (c *UnlockCommand) RunIntoGlazeProcessor(
 		types.MRP("halt_meaning", haltText),
 		types.MRP("state_after", after.State),
 		types.MRP("cleared", after.State != "Alarm"),
-		types.MRP("homed", after.Homed),
+		types.MRP("at_rest", after.AtRestPosition),
 	))
 }

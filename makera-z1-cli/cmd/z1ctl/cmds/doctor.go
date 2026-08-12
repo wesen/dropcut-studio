@@ -134,11 +134,12 @@ func (c *DoctorCommand) RunIntoGlazeProcessor(
 		checks = append(checks, check{"machine state", "warn",
 			st.State + " — not idle, a job may be running"})
 	}
-	if st.Homed {
-		checks = append(checks, check{"homed", "ok", "machine has a reference position"})
+	if st.AtRestPosition {
+		checks = append(checks, check{"homing", "unknown",
+			"position is -1,-1,-1: parked at home OR never homed — stock firmware cannot say; home first if unsure"})
 	} else {
-		checks = append(checks, check{"homed", "warn",
-			"axes report the unhomed sentinel (-1); machine coordinates are not meaningful"})
+		checks = append(checks, check{"homing", "ok",
+			"position has moved since boot or homing"})
 	}
 
 	d, err := client.QueryDiagnose(ctx)
