@@ -384,8 +384,13 @@ Practical effect on the design:
 - **Upload verification is trustworthy on this firmware.** `z1ctl job run` can
   upload, then `md5sum` the remote file and compare against the local digest, and
   that check is real (design guide §13.3).
-- **Download verification remains unproven.** Testing it requires actually
-  running a framed download, which the read-only probe cannot do.
+- **Download verification is now proven too.** A framed download of
+  `/sd/gcodes/goto-pack-pos-z1.nc` (54 B, one block) and of
+  `/sd/gcodes/MakeraBadge.nc` (328,417 B, 41 blocks) both advertised a genuine
+  digest that matched the received bytes. The placeholder does not appear on the
+  transfer path on this firmware either. A repeat download of the same file
+  produced the cache-hit path: the machine answered `FILE_CAN` and nothing was
+  transferred.
 - **Keep ADR-007's rule anyway** — validate the advertised digest as 32
   *lowercase hex* characters and skip the check with a warning otherwise. It
   costs nothing and it is the only thing standing between us and a silently

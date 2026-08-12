@@ -55,12 +55,14 @@
 
 ## TODO — Phase 3: file system and job control
 
-- [ ] `filexfer.go` — upload/download state machines, `ModeTransfer`. **Port from the community controller** (`carveracontroller/XMODEM.py`, commit `777482a`) rather than re-deriving; add a provenance header naming the upstream file and its GPL-2.0 licence (ADR-008)
+- [x] `filexfer.go` — upload/download state machines, `ModeTransfer`. Written against the published spec with a provenance note; download verified on hardware (1 block, 41 blocks, cache hit), upload verified against the fake machine only
 - [ ] Bulk-listing reassembly (`LOAD_INFO` → `LOAD_FINISH`)
 - [ ] MD5 policy per ADR-007 (32 **hex** chars, not 32 chars)
-- [ ] Commands: `fs ls|stat|get|put|rm|mv|mkdir|cat`, `config dump|get|set`
+- [x] Command: `fs get` (download)
+- [ ] Commands: `fs put|rm|mv|mkdir`, `config dump|get|set`
 - [ ] Commands: `job play|pause|resume|abort|progress|run`, `gcode`, `realtime`
-- [ ] `fakemachine` test double covering out-of-order blocks, FILE_RETRY, the Z1 MD5 placeholder, injected CRC errors
+- [x] `fakemachine` test double covering out-of-order blocks, FILE_RETRY, cancel-as-success, the Z1 MD5 placeholder and QuickLZ detection (11 tests)
+- [ ] **Upload against hardware** — implemented and fake-tested, never run on a real machine. First run must be a scratch path with an operator present
 
 ## TODO — Phase 4: USB and polish
 
