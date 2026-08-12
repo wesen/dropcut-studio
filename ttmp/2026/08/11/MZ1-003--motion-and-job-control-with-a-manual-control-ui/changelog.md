@@ -35,3 +35,12 @@
 - Wrote a hardware bring-up sequence that begins with a dry run and an air cut,
   and that includes deliberately verifying the dead-man on the real machine
   before anyone relies on it.
+
+## 2026-08-11
+
+Pre-implementation review: graded MZ1-001/002 work, found the Client command-serialisation gap, amended the design (typed MotionOps, classifier-owned risk class, jog lease)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-08-11/cnc-control-dropcut/dropcut-studio/ttmp/2026/08/11/MZ1-003--motion-and-job-control-with-a-manual-control-ui/analysis/01-implementation-review-the-client-the-cli-and-the-mz1-003-design.md — The review
+

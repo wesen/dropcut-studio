@@ -17,4 +17,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/go-go-golems/glazed => ../glazed
+replace github.com/go-go-golems/glazed => ../../glazed

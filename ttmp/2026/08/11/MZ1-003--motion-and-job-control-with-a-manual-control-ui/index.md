@@ -13,13 +13,16 @@ Topics:
 DocType: index
 Intent: long-term
 Owners: []
-RelatedFiles: []
+RelatedFiles:
+    - Path: repo://ttmp/2026/08/11/MZ1-003--motion-and-job-control-with-a-manual-control-ui/analysis/01-implementation-review-the-client-the-cli-and-the-mz1-003-design.md
+      Note: Pre-implementation review whose amendments A-C supersede the design where they conflict
 ExternalSources: []
-Summary: "Design for adding motion and job control to z1ctl together with a pendant-style manual control UI: four risk classes, the authorised path, jogging with its dead-man keepalive, job lifecycle and halt handling, and a bring-up sequence starting from an air cut."
+Summary: 'Design for adding motion and job control to z1ctl together with a pendant-style manual control UI: four risk classes, the authorised path, jogging with its dead-man keepalive, job lifecycle and halt handling, and a bring-up sequence starting from an air cut.'
 LastUpdated: 2026-08-11T22:30:00-04:00
-WhatFor: "Landing page for the motion and job control work."
-WhenToUse: "Start here before implementing anything that can move the machine."
+WhatFor: Landing page for the motion and job control work.
+WhenToUse: Start here before implementing anything that can move the machine.
 ---
+
 
 # Motion and job control, with a manual control UI
 
