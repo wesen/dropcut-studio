@@ -608,3 +608,43 @@ find out what it actually does before shipping a wrong unit.
 - `pkg/makera/motion.go` (`renderJogSpeed` comment block), MZ1-001
   observations §11, `vendor/README.md` for the source citations.
 - `go run ./cmd/z1ctl jog X-10 --speed 10 --dry-run` → `$J X-10 F0.1`.
+
+## Step 8: JogSpeed grows both units; the dialect check picks the encoding
+
+The user asked whether we detect stock vs community firmware for the speed
+handling, then set the interface: `--speed-scale` (0-1, the firmware's own
+unit) and `--feed` (mm/min) as separate flags. `JogSpeed{Scale, FeedMMMin}`
+now carries the intent; the dialect — detected from the version string, one
+cached `version` query when needed — picks the encoding: scale renders `F` on
+stock and `S` on community; feed renders `F` on community and is REFUSED on
+stock, which cannot express it. Full speed renders no word and skips the
+version probe entirely.
+
+### Prompt Context
+
+**User prompt (verbatim):** "do we check for stock vs opensource for properly handling --feed ?" — then "can we call the flag --speed-scale (0-1) then, and show that in the doc? also, if using the opensource firmware, we should be able to use --feed, right?"
+
+**Assistant interpretation:** Make the dialect handling explicit and complete:
+both units, each valid exactly where the firmware can express it.
+
+**Inferred user intent:** No unit ever silently means something else.
+
+**Commit (code):** (this commit)
+
+### What was tricky to build
+
+- Dry runs have no machine, hence no dialect. `JogSpeed.canonical()` renders
+  the only dialect that can express the speed (community for feed, stock for
+  scale), so `--feed 600 --dry-run` shows `F600` even against a stock
+  machine — the refusal happens at send time, when the dialect is known.
+
+### What warrants a second pair of eyes
+
+- The community-side encodings (`S0.25`, `F600`) are tested against the fake
+  and the community source, not against a community machine — none is
+  available here.
+
+### Code review instructions
+
+- `pkg/makera/motion.go`: the dialect table comment, `JogSpeed.word`,
+  `TestJogSpeedDialects` in motion_test.go.

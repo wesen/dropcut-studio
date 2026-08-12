@@ -631,8 +631,11 @@ controller sends mm/min values — correct against community firmware, silently
 "always maximum" against stock. Another case of the controllers' source
 misleading about stock behaviour; observation outranks citation, again.
 
-z1ctl therefore expresses jog speed as a percent of the axis maximum
-everywhere and renders `F<pct/100>`.
+z1ctl therefore takes jog speed in the firmware's own units and detects the
+dialect (a `c` in the version string marks community) before sending:
+`--speed-scale 0-1` renders `F<scale>` on stock and `S<scale>` on community;
+`--feed <mm/min>` renders `F<mm/min>` on community and is REFUSED on stock,
+which cannot express it.
 
 ## 12. Reproducing this session
 

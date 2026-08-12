@@ -25,7 +25,8 @@ var _ cmds.GlazeCommand = &JogCommand{}
 type jogSettings struct {
 	Axis       string  `glazed:"axis"`
 	Distance   string  `glazed:"distance"`
-	Speed      float64 `glazed:"speed"`
+	SpeedScale float64 `glazed:"speed-scale"`
+	Feed       float64 `glazed:"feed"`
 	Continuous bool    `glazed:"continuous"`
 	For        string  `glazed:"for"`
 }
@@ -43,12 +44,22 @@ func NewJogCommand() (*JogCommand, error) {
 Step jog sends one bounded relative move and is the form to use from the
 command line:
 
-  z1ctl jog X 10 --confirm             10 mm in +X at full speed
-  z1ctl jog Z-0.1 --speed 10 --confirm 0.1 mm in -Z at 10% of the axis maximum
+  z1ctl jog X 10 --confirm                    10 mm in +X at full speed
+  z1ctl jog Z-0.1 --speed-scale 0.1 --confirm 0.1 mm in -Z at 10% of max
 
-Speed is a PERCENT OF THE AXIS MAXIMUM, because that is what this firmware's
-$J implements: F is a scale of max_rate, and any feed-like value >= 1 simply
-means "maximum". Measured on hardware; see pkg/makera/motion.go.
+Two speed units exist because two firmware dialects exist (measured on
+hardware, confirmed in both firmware sources — see pkg/makera/motion.go):
+
+  --speed-scale 0..1   fraction of the axis maximum. Works on BOTH dialects:
+                       stock $J reads F as a scale of max_rate; community
+                       takes the same fraction as an S word.
+  --feed <mm/min>      absolute feedrate. COMMUNITY firmware only — stock
+                       cannot express it and this tool refuses rather than
+                       silently jogging at maximum (which is exactly what the
+                       official controller does wrong against stock).
+
+The firmware dialect is detected from the version string before any
+speed-carrying jog is sent.
 
 Negative distances: a bare "-0.1" is read as flags by the argument parser, so
 write the axis and distance as ONE token ($J style), or end flag parsing with
@@ -80,9 +91,12 @@ machine is in Alarm, or while a job is running.`),
 				fields.WithHelp("Signed distance in mm; with --continuous, a bare + or - direction. May be combined into the axis token")),
 		),
 		cmds.WithFlags(append(motionFlagDefs(),
-			fields.New("speed", fields.TypeFloat,
+			fields.New("speed-scale", fields.TypeFloat,
 				fields.WithDefault(0.0),
-				fields.WithHelp("Jog speed as a percent of the axis maximum; 0 or 100 = maximum")),
+				fields.WithHelp("Jog speed as a fraction of the axis maximum, 0-1; 0 = maximum. Works on stock and community firmware")),
+			fields.New("feed", fields.TypeFloat,
+				fields.WithDefault(0.0),
+				fields.WithHelp("Jog feedrate in mm/min. COMMUNITY firmware only; stock cannot express it and is refused")),
 			fields.New("continuous", fields.TypeBool,
 				fields.WithDefault(false),
 				fields.WithHelp("Continuous jog held for --for, stopped by the 0x19/^Y handshake")),
@@ -121,7 +135,7 @@ func (c *JogCommand) RunIntoGlazeProcessor(
 		if err != nil {
 			return errors.Errorf("distance %q is not a number (use --continuous for a held jog)", s.Distance)
 		}
-		op, err := makera.StepJog(axis, dist, s.Speed)
+		op, err := makera.StepJog(axis, dist, makera.JogSpeed{Scale: s.SpeedScale, FeedMMMin: s.Feed})
 		if err != nil {
 			return err
 		}
@@ -157,7 +171,7 @@ func (c *JogCommand) runContinuous(
 	if err != nil {
 		return err
 	}
-	op, err := makera.ContinuousJog(axis, positive, s.Speed)
+	op, err := makera.ContinuousJog(axis, positive, makera.JogSpeed{Scale: s.SpeedScale, FeedMMMin: s.Feed})
 	if err != nil {
 		return err
 	}
@@ -175,7 +189,7 @@ func (c *JogCommand) runContinuous(
 	}
 	defer func() { _ = client.Close() }()
 
-	session, err := client.JogStart(ctx, axis, positive, s.Speed,
+	session, err := client.JogStart(ctx, axis, positive, makera.JogSpeed{Scale: s.SpeedScale, FeedMMMin: s.Feed},
 		makera.PreflightOptions{AllowOpenCover: f.AllowOpenCover})
 	if err != nil {
 		return err

@@ -69,6 +69,8 @@ type fakeMachine struct {
 	estop bool
 	// playing, when non-nil, is emitted as the P: key.
 	playing *Playback
+	// fwVersion answers the `version` command. A 'c' marks community firmware.
+	fwVersion string
 
 	// cmds records every text command received, in order.
 	cmds []string
@@ -102,6 +104,7 @@ func newFakeMachine(file []byte, blockSize int) *fakeMachine {
 		received:   map[uint32][]byte{},
 		state:      "Idle",
 		homed:      true,
+		fwVersion:  "1.0.15.0.1.11",
 		endstops:   []string{"0", "0", "0", "0", "0", "1", "1", "0"},
 		jogDeadman: 600 * time.Millisecond,
 		replies:    map[string]string{},
@@ -212,6 +215,8 @@ func (m *fakeMachine) handleCommand(cmd string) {
 		m.reply(PTypeNormalInfo, []byte("echo: "+cmd[len("echo "):]+"\r\n"))
 	case cmd == "diagnose":
 		m.reply(PTypeDiagRes, []byte(m.diagnoseReport()+"\r\n"))
+	case cmd == "version":
+		m.reply(PTypeNormalInfo, []byte("version = "+m.fwVersion+"\r\n"))
 	case strings.HasPrefix(cmd, "$J -c"):
 		if m.state == "Idle" {
 			m.jogging = true

@@ -276,7 +276,10 @@ The direction argument is an axis letter and a signed distance.
 > firmware `F` is a *scale of max_rate* — `F0.5` is half speed, and anything
 > ≥ 1 means maximum, which is why F1/F10/F300/F1000 all moved identically on
 > the real machine. The community firmware later redefined `F` as mm/min and
-> moved the scale to `S`. Full evidence: MZ1-001 `reference/03` §11.
+> moved the scale to `S`. z1ctl exposes both units and detects the dialect:
+> `--speed-scale 0-1` works everywhere (`F` on stock, `S` on community);
+> `--feed mm/min` works on community and is refused on stock, which cannot
+> express it. Full evidence: MZ1-001 `reference/03` §11.
 
 ### 4.2 Continuous jog, and the dead-man property
 

@@ -21,11 +21,13 @@ func TestMotionOpValidation(t *testing.T) {
 		name string
 		make func() (MotionOp, error)
 	}{
-		{"bad axis", func() (MotionOp, error) { return StepJog('Q', 1, 0) }},
-		{"zero distance", func() (MotionOp, error) { return StepJog(AxisX, 0, 0) }},
-		{"absurd distance", func() (MotionOp, error) { return StepJog(AxisX, 5000, 0) }},
-		{"negative speed", func() (MotionOp, error) { return StepJog(AxisX, 1, -5) }},
-		{"speed above 100 percent", func() (MotionOp, error) { return StepJog(AxisX, 1, 99999) }},
+		{"bad axis", func() (MotionOp, error) { return StepJog('Q', 1, JogMax) }},
+		{"zero distance", func() (MotionOp, error) { return StepJog(AxisX, 0, JogMax) }},
+		{"absurd distance", func() (MotionOp, error) { return StepJog(AxisX, 5000, JogMax) }},
+		{"negative scale", func() (MotionOp, error) { return StepJog(AxisX, 1, JogScale(-0.5)) }},
+		{"scale above 1", func() (MotionOp, error) { return StepJog(AxisX, 1, JogScale(1.5)) }},
+		{"absurd feed", func() (MotionOp, error) { return StepJog(AxisX, 1, JogFeed(99999)) }},
+		{"scale AND feed", func() (MotionOp, error) { return StepJog(AxisX, 1, JogSpeed{Scale: 0.5, FeedMMMin: 600}) }},
 		{"zero rpm", func() (MotionOp, error) { return SpindleOn(0) }},
 		{"absurd rpm", func() (MotionOp, error) { return SpindleOn(999999) }},
 		{"empty move", func() (MotionOp, error) { return RapidTo(true, PartialAxes{}, false) }},
@@ -52,10 +54,11 @@ func TestMotionOpRendering(t *testing.T) {
 		op   MotionOp
 		want []string
 	}{
-		{mustOp(StepJog(AxisX, 10, 25)), []string{"$J X10 F0.25"}},
-		{mustOp(StepJog(AxisY, -0.1, 0)), []string{"$J Y-0.1"}},
-		{mustOp(ContinuousJog(AxisZ, false, 50)), []string{"$J -c Z-1 F0.5"}},
-		{mustOp(ContinuousJog(AxisX, true, 0)), []string{"$J -c X1"}},
+		{mustOp(StepJog(AxisX, 10, JogScale(0.25))), []string{"$J X10 F0.25"}},
+		{mustOp(StepJog(AxisX, 10, JogFeed(600))), []string{"$J X10 F600"}}, // canonical = community, the only dialect that can express it
+		{mustOp(StepJog(AxisY, -0.1, JogMax)), []string{"$J Y-0.1"}},
+		{mustOp(ContinuousJog(AxisZ, false, JogScale(0.5))), []string{"$J -c Z-1 F0.5"}},
+		{mustOp(ContinuousJog(AxisX, true, JogMax)), []string{"$J -c X1"}},
 		{Home(), []string{"$H"}},
 		{SafeZ(), []string{"G53 G90 G0 Z-3"}},
 		{Park(), []string{"G53 G90 G0 Z-3", "G53 G90 G0 X-197 Y-206"}},
@@ -81,7 +84,7 @@ func TestMotionOpRendering(t *testing.T) {
 // TestOpClassesMatchTheReviewedTable pins the risk classes to the MZ1-003 §3
 // table (with the review's amendment: everything that only stops is Class 0).
 func TestOpClassesMatchTheReviewedTable(t *testing.T) {
-	jog, _ := StepJog(AxisX, 1, 0)
+	jog, _ := StepJog(AxisX, 1, JogMax)
 	spOn, _ := SpindleOn(1000)
 	lightOn, _ := Accessory(AccessoryLight, true, 0)
 	lightOff, _ := Accessory(AccessoryLight, false, 0)
@@ -101,7 +104,7 @@ func TestOpClassesMatchTheReviewedTable(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestMotionRequestRefusesEmptyAndUnreasoned(t *testing.T) {
-	op, _ := StepJog(AxisX, 1, 0)
+	op, _ := StepJog(AxisX, 1, JogMax)
 
 	_, err := DryRun(MotionRequest{Reason: "no ops"})
 	assert.Error(t, err)
@@ -117,7 +120,7 @@ func TestRequestClassIsTheMaximumAcrossOps(t *testing.T) {
 }
 
 func TestDryRunRendersDecodableFrames(t *testing.T) {
-	jog, _ := StepJog(AxisX, 10, 25)
+	jog, _ := StepJog(AxisX, 10, JogScale(0.25))
 	rep, err := DryRun(MotionRequest{Ops: []MotionOp{jog}, Reason: "test"})
 	require.NoError(t, err)
 	require.Len(t, rep.Steps, 1)
@@ -231,7 +234,7 @@ func TestMotionSendsOpsInOrderAndStopsOnRefusal(t *testing.T) {
 	m := newFakeMachine(nil, 128)
 	c := newFakeClient(t, m)
 
-	jog, _ := StepJog(AxisX, 10, 25)
+	jog, _ := StepJog(AxisX, 10, JogScale(0.25))
 	res, err := c.Motion(context.Background(), MotionRequest{
 		Ops: []MotionOp{jog}, Reason: "unit test",
 	}, PreflightOptions{})
@@ -262,6 +265,82 @@ func TestMotionSendsOpsInOrderAndStopsOnRefusal(t *testing.T) {
 	}
 }
 
+// TestJogSpeedDialects pins the encoding table: scale works on both dialects
+// (stock F word, community S word); an absolute feed works only on community,
+// and stock refuses it rather than silently jogging at maximum — which is
+// exactly the official controller's bug against stock firmware.
+func TestJogSpeedDialects(t *testing.T) {
+	lastJog := func(m *fakeMachine) string {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		for i := len(m.cmds) - 1; i >= 0; i-- {
+			if strings.HasPrefix(m.cmds[i], "$J") {
+				return m.cmds[i]
+			}
+		}
+		return ""
+	}
+	run := func(t *testing.T, fw string, speed JogSpeed) (*fakeMachine, error) {
+		t.Helper()
+		m := newFakeMachine(nil, 128)
+		m.fwVersion = fw
+		c := newFakeClient(t, m)
+		jog, err := StepJog(AxisX, 1, speed)
+		require.NoError(t, err)
+		_, err = c.Motion(context.Background(), MotionRequest{
+			Ops: []MotionOp{jog}, Reason: "unit test",
+		}, PreflightOptions{})
+		return m, err
+	}
+
+	t.Run("stock scale renders F", func(t *testing.T) {
+		m, err := run(t, "1.0.15.0.1.11", JogScale(0.25))
+		require.NoError(t, err)
+		assert.Equal(t, "$J X1 F0.25", lastJog(m))
+	})
+	t.Run("community scale renders S", func(t *testing.T) {
+		m, err := run(t, "2.1.0c", JogScale(0.25))
+		require.NoError(t, err)
+		assert.Equal(t, "$J X1 S0.25", lastJog(m))
+	})
+	t.Run("community feed renders F mm/min", func(t *testing.T) {
+		m, err := run(t, "2.1.0c", JogFeed(600))
+		require.NoError(t, err)
+		assert.Equal(t, "$J X1 F600", lastJog(m))
+	})
+	t.Run("stock feed is refused, nothing sent", func(t *testing.T) {
+		m, err := run(t, "1.0.15.0.1.11", JogFeed(600))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "cannot express")
+		assert.Empty(t, lastJog(m), "a refused feed jog must send no $J at all")
+	})
+	t.Run("continuous jog follows the same table", func(t *testing.T) {
+		m := newFakeMachine(nil, 128)
+		m.fwVersion = "2.1.0c"
+		c := newFakeClient(t, m)
+		s, err := c.JogStartManual(context.Background(), AxisY, true, JogScale(0.5), PreflightOptions{})
+		require.NoError(t, err)
+		assert.Equal(t, "$J -c Y1 S0.5", lastJog(m))
+		require.NoError(t, s.Stop(context.Background()))
+
+		_, err = c.JogStartManual(context.Background(), AxisY, true, JogFeed(600), PreflightOptions{})
+		require.NoError(t, err) // community expresses feed fine
+		_ = err
+	})
+	t.Run("full speed needs no dialect and no version query", func(t *testing.T) {
+		m := newFakeMachine(nil, 128)
+		c := newFakeClient(t, m)
+		jog, _ := StepJog(AxisX, 1, JogMax)
+		_, err := c.Motion(context.Background(), MotionRequest{
+			Ops: []MotionOp{jog}, Reason: "unit test",
+		}, PreflightOptions{})
+		require.NoError(t, err)
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		assert.NotContains(t, m.cmds, "version", "maximum is dialect-independent; no version probe needed")
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Continuous jog: keepalive, handshake, dead-man
 // ---------------------------------------------------------------------------
@@ -270,7 +349,7 @@ func TestJogKeepalivesRideTheStatusPoll(t *testing.T) {
 	m := newFakeMachine(nil, 128)
 	c := newFakeClient(t, m)
 
-	s, err := c.JogStart(context.Background(), AxisX, true, 25, PreflightOptions{})
+	s, err := c.JogStart(context.Background(), AxisX, true, JogScale(0.25), PreflightOptions{})
 	require.NoError(t, err)
 	defer func() { _ = s.Stop(context.Background()) }()
 
@@ -291,7 +370,7 @@ func TestJogStopRunsTheHandshake(t *testing.T) {
 	m := newFakeMachine(nil, 128)
 	c := newFakeClient(t, m)
 
-	s, err := c.JogStart(context.Background(), AxisY, false, 0, PreflightOptions{})
+	s, err := c.JogStart(context.Background(), AxisY, false, JogMax, PreflightOptions{})
 	require.NoError(t, err)
 	require.NoError(t, s.Stop(context.Background()), "the ^Y acknowledgement must be observed")
 
@@ -312,7 +391,7 @@ func TestJogStopReportsAMissingAck(t *testing.T) {
 	m.suppressJogAck = true
 	c := newFakeClient(t, m)
 
-	s, err := c.JogStart(context.Background(), AxisX, true, 0, PreflightOptions{})
+	s, err := c.JogStart(context.Background(), AxisX, true, JogMax, PreflightOptions{})
 	require.NoError(t, err)
 	err = s.Stop(context.Background())
 	require.Error(t, err)
@@ -326,7 +405,7 @@ func TestJogDeadman(t *testing.T) {
 	m := newFakeMachine(nil, 128)
 	c := newFakeClient(t, m)
 
-	s, err := c.JogStart(context.Background(), AxisZ, true, 0, PreflightOptions{})
+	s, err := c.JogStart(context.Background(), AxisZ, true, JogMax, PreflightOptions{})
 	require.NoError(t, err)
 	require.True(t, m.jogActiveNow())
 
@@ -354,7 +433,7 @@ func TestManualJogForwardsKeepalivesOneToOne(t *testing.T) {
 	m := newFakeMachine(nil, 128)
 	c := newFakeClient(t, m)
 
-	s, err := c.JogStartManual(context.Background(), AxisX, true, 25, PreflightOptions{})
+	s, err := c.JogStartManual(context.Background(), AxisX, true, JogScale(0.25), PreflightOptions{})
 	require.NoError(t, err)
 
 	for i := 0; i < 3; i++ {
@@ -381,11 +460,11 @@ func TestSecondConcurrentJogIsRefused(t *testing.T) {
 	m := newFakeMachine(nil, 128)
 	c := newFakeClient(t, m)
 
-	s, err := c.JogStart(context.Background(), AxisX, true, 0, PreflightOptions{})
+	s, err := c.JogStart(context.Background(), AxisX, true, JogMax, PreflightOptions{})
 	require.NoError(t, err)
 	defer func() { _ = s.Stop(context.Background()) }()
 
-	_, err = c.JogStart(context.Background(), AxisY, true, 0, PreflightOptions{})
+	_, err = c.JogStart(context.Background(), AxisY, true, JogMax, PreflightOptions{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "never queued")
 }

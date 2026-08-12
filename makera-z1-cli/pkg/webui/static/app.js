@@ -350,11 +350,11 @@ $("stepSeg").querySelectorAll("button").forEach((b) => {
   });
 });
 
-// Jog speed is a percent of the axis maximum — that is what the firmware's
-// $J F word means (a scale of max_rate), so the page speaks the same unit.
-function jogSpeedPct() {
+// Jog speed is a scale of the axis maximum (0-1) — the unit the firmware's
+// $J actually implements — so the page speaks the same unit.
+function jogSpeedScale() {
   const v = parseFloat($("jogSpeed").value);
-  return isFinite(v) && v > 0 && v <= 100 ? v : 0;
+  return isFinite(v) && v > 0 && v < 1 ? v : 0;
 }
 
 async function stepJog(axis, dir) {
@@ -362,7 +362,7 @@ async function stepJog(axis, dir) {
   flash(`jog ${axis}${dist > 0 ? "+" : ""}${dist} …`);
   try {
     const res = await post("/api/jog", {
-      axis, distance: dist, speed_pct: jogSpeedPct(),
+      axis, distance: dist, speed_scale: jogSpeedScale(),
       allow_open_cover: $("allowOpenCover").checked,
     });
     flash(`sent ${res.sent.join(" · ")} — state ${res.state_after}`);
@@ -381,7 +381,7 @@ async function holdJogStart(btn, axis, dir) {
   flash(`holding ${axis}${dir > 0 ? "+" : "−"} — release to stop`);
   try {
     await post("/api/jog/start", {
-      axis, positive: dir > 0, speed_pct: jogSpeedPct(),
+      axis, positive: dir > 0, speed_scale: jogSpeedScale(),
       allow_open_cover: $("allowOpenCover").checked,
     });
   } catch (err) {
