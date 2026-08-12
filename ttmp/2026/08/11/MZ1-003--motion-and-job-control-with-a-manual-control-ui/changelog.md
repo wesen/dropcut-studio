@@ -80,3 +80,12 @@ CORRECTION: -1,-1,-1 is the post-homing rest position AND the boot position; sto
 
 - /home/manuel/workspaces/2026-08-11/cnc-control-dropcut/dropcut-studio/makera-z1-cli/pkg/makera/report.go — AtRestPosition and the legacy Homed heuristic
 
+
+## 2026-08-12
+
+Camera support: hand-rolled RFC6455 client for the ESP32 stream (port 82, start_stream -> JPEG per message), z1ctl camera probe/snap/resolution, MJPEG bridge + Camera tab in the page. Verified on hardware: real 640x480 frame captured (b0eaf54).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-08-11/cnc-control-dropcut/dropcut-studio/makera-z1-cli/pkg/makera/camera.go — The camera client and protocol notes
+

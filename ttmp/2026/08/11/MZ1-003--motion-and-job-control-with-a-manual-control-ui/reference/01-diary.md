@@ -997,3 +997,66 @@ machine tells it.
 
 - `pkg/makera/report.go` (AtRestPosition comment block), `preflight.go`
   condition 7, `positioning.go` home flow, observations §12.
+
+## Step 15: Camera support — a separate service, verified with a real frame
+
+The camera turned out to be the easiest subsystem in the project, because it
+is not part of the machine protocol at all: the Z1's ESP32 WiFi module serves
+a WebSocket on port 82 (`/ws_video`) that pushes one whole JPEG per binary
+message after the client sends `start_stream`. Separate service, separate
+port — it never touches the single control connection, and nothing about it
+can move the machine. Protocol read from the community controller's
+`addons/camera/Z1Camera.py`; resolution (Espressif framesizes 10–15, HTTP on
+port 80) is the only control that exists.
+
+Built: a minimal hand-rolled RFC 6455 client in `pkg/makera/camera.go`
+(mirroring upstream's own hand-rolled `websocket.py`, no new dependency),
+tested against a fake server covering fragmentation, ping/pong, the 126
+length form, orderly close and client-frame masking; `z1ctl camera
+probe|snap|resolution`; and a Camera tab in the control page where the
+server bridges the WebSocket to MJPEG (`multipart/x-mixed-replace`) so a
+plain `<img>` renders the live stream — opened only while the tab is
+visible.
+
+Verified against the machine within minutes of writing it: `camera probe` →
+true, `camera snap` → a real 640×480 JPEG of the machine bed under the green
+work light.
+
+### Prompt Context
+
+**User prompt (verbatim):** "Ok, what about camera support?"
+
+**Assistant interpretation:** Scope it from the vendored sources, then build
+it if it is as contained as it looks.
+
+**Inferred user intent:** Round out the control page with the machine's
+remaining major capability.
+
+**Commit (code):** b0eaf54 — "Camera: WebSocket client, CLI group, and a live tab in the control page"
+
+### What was tricky to build
+
+- Nothing in the protocol — the trap is the resolution API: the firmware
+  answers 200 to ANY value and silently ignores out-of-range ones, so the
+  client only accepts the six sizes upstream measured as working. Another
+  "ok does not mean it worked" firmware habit, consistent with $H and play.
+
+### What warrants a second pair of eyes
+
+- Whether the ESP32 accepts several concurrent stream clients is untested;
+  the page opens one bridge per viewing tab and one tab at a time is the
+  supported shape.
+- The stream route is a GET with no auth beyond the page itself (read-only
+  camera); if the server ever runs --allow-remote on an untrusted LAN, the
+  stream is visible to anyone with the URL — worth revisiting alongside the
+  token story.
+
+### What should be done in the future
+
+- N/A for stock capability; snapshots-into-job-logs could ride this later.
+
+### Code review instructions
+
+- `pkg/makera/camera.go` (top comment = protocol notes), `camera_test.go`,
+  `pkg/webui/camera.go` (MJPEG bridge), the tab wiring at the bottom of
+  `app.js`.
