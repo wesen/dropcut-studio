@@ -74,7 +74,8 @@ type CameraSnapCommand struct{ *cmds.CommandDescription }
 var _ cmds.GlazeCommand = &CameraSnapCommand{}
 
 type cameraSnapSettings struct {
-	Out string `glazed:"out"`
+	Out    string `glazed:"out"`
+	Warmup int    `glazed:"warmup"`
 }
 
 func NewCameraSnapCommand() (*CameraSnapCommand, error) {
@@ -85,15 +86,23 @@ func NewCameraSnapCommand() (*CameraSnapCommand, error) {
 	return &CameraSnapCommand{cmds.NewCommandDescription(
 		"snap",
 		cmds.WithShort("Grab one JPEG frame from the camera"),
-		cmds.WithLong(`Connect to the camera stream, take the first complete frame,
-write it to a file and disconnect. Read-only; the camera is a separate
-service and the machine's control connection is not used.
+		cmds.WithLong(`Connect to the camera stream, let the sensor settle, save one
+frame and disconnect. Read-only; the camera is a separate service and the
+machine's control connection is not used.
 
-  z1ctl camera snap -o bed.jpg`),
+The sensor's auto white balance runs on-camera and converges only while
+streaming — the first frames of a cold stream carry a strong green cast
+(measured: frame 1 green, frame 60 neutral). --warmup discards that many
+frames first; ~30 is a second and a half of stream.
+
+  z1ctl camera snap --out bed.jpg`),
 		cmds.WithFlags(
 			fields.New("out", fields.TypeString,
 				fields.WithDefault("camera.jpg"),
 				fields.WithHelp("Output file")),
+			fields.New("warmup", fields.TypeInteger,
+				fields.WithDefault(30),
+				fields.WithHelp("Frames to discard while the sensor's white balance converges; 0 keeps the first (green-tinted) frame")),
 		),
 		cmds.WithSections(conn),
 	)}, nil
@@ -116,6 +125,11 @@ func (c *CameraSnapCommand) RunIntoGlazeProcessor(
 	}
 	defer func() { _ = cam.Close() }()
 
+	for i := 0; i < s.Warmup; i++ {
+		if _, err := cam.NextFrame(10 * time.Second); err != nil {
+			return errors.Wrapf(err, "warmup frame %d", i+1)
+		}
+	}
 	frame, err := cam.NextFrame(10 * time.Second)
 	if err != nil {
 		return errors.Wrap(err, "waiting for a frame")
@@ -126,6 +140,7 @@ func (c *CameraSnapCommand) RunIntoGlazeProcessor(
 	return gp.AddRow(ctx, types.NewRow(
 		types.MRP("file", s.Out),
 		types.MRP("bytes", len(frame)),
+		types.MRP("warmup_frames", s.Warmup),
 	))
 }
 
