@@ -2,7 +2,6 @@ package cmds
 
 import (
 	"context"
-	"os"
 	"time"
 
 	"github.com/go-go-golems/glazed/pkg/cmds/fields"
@@ -34,7 +33,7 @@ func NewConnectionSection() (schema.Section, error) {
 		schema.WithFields(
 			fields.New("device", fields.TypeString,
 				fields.WithDefault(""),
-				fields.WithHelp("Machine address host[:port]. Defaults to $Z1CTL_DEVICE, then to a discovery sweep")),
+				fields.WithHelp("Machine address host[:port]. Also settable as $Z1CTL_DEVICE; falls back to a discovery sweep")),
 			fields.New("protocol", fields.TypeChoice,
 				fields.WithChoices("auto", "makera", "smoothie"),
 				fields.WithDefault("auto"),
@@ -54,8 +53,10 @@ func NewConnectionSection() (schema.Section, error) {
 
 // Resolve turns the settings into makera.Options, running discovery if needed.
 //
-// Resolution order: explicit flag, then $Z1CTL_DEVICE, then a discovery sweep
-// that must find exactly one machine.
+// Resolution order: --device flag or $Z1CTL_DEVICE — both arrive in Device,
+// because the env is loaded by the glazed env middleware, whitelisted to this
+// section (see z1ctlMiddlewares) — then a discovery sweep that must find
+// exactly one machine.
 func (c ConnectionSettings) Resolve(ctx context.Context) (makera.Options, error) {
 	opts := makera.DefaultOptions()
 	opts.ProtocolName = c.Protocol
@@ -69,9 +70,6 @@ func (c ConnectionSettings) Resolve(ctx context.Context) (makera.Options, error)
 	}
 
 	addr := c.Device
-	if addr == "" {
-		addr = os.Getenv("Z1CTL_DEVICE")
-	}
 	if addr == "" {
 		sweep, err := parseDuration(c.DiscoverFor, 3*time.Second)
 		if err != nil {

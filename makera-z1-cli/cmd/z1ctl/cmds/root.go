@@ -3,7 +3,10 @@ package cmds
 import (
 	"github.com/go-go-golems/glazed/pkg/cli"
 	"github.com/go-go-golems/glazed/pkg/cmds"
+	"github.com/go-go-golems/glazed/pkg/cmds/fields"
 	"github.com/go-go-golems/glazed/pkg/cmds/schema"
+	cmd_sources "github.com/go-go-golems/glazed/pkg/cmds/sources"
+	"github.com/go-go-golems/glazed/pkg/cmds/values"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
@@ -15,9 +18,26 @@ func parserOptions() []cli.CobraOption {
 	return []cli.CobraOption{
 		cli.WithParserConfig(cli.CobraParserConfig{
 			ShortHelpSections: []string{schema.DefaultSlug},
-			MiddlewaresFunc:   cli.CobraCommandDefaultMiddlewares,
+			MiddlewaresFunc:   z1ctlMiddlewares,
 		}),
 	}
+}
+
+// z1ctlMiddlewares is the default Cobra chain plus environment loading,
+// deliberately WHITELISTED to the connection section: Z1CTL_DEVICE,
+// Z1CTL_PROTOCOL, Z1CTL_TIMEOUT and friends work from the environment, and
+// nothing else does. In particular Z1CTL_CONFIRM must never exist —
+// authorising motion from an inherited shell variable would defeat the
+// per-invocation confirmation that --confirm is for.
+func z1ctlMiddlewares(_ *values.Values, cmd *cobra.Command, args []string) ([]cmd_sources.Middleware, error) {
+	return []cmd_sources.Middleware{
+		cmd_sources.FromCobra(cmd, fields.WithSource("cobra")),
+		cmd_sources.FromArgs(args, fields.WithSource("arguments")),
+		cmd_sources.WrapWithWhitelistedSections([]string{ConnectionSlug},
+			cmd_sources.FromEnv("Z1CTL", fields.WithSource("env")),
+		),
+		cmd_sources.FromDefaults(fields.WithSource(fields.SourceDefaults)),
+	}, nil
 }
 
 // Register mounts every z1ctl command onto the root.
