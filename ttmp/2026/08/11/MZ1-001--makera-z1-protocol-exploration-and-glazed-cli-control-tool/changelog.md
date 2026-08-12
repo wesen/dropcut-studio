@@ -102,3 +102,8 @@
 
 Implemented the Go library, the z1ctl CLI and the hardware control page (commits 6d89caf, e84d59f, 81d775d); backfilled the diary at reference/04-diary.md
 
+
+## 2026-08-11
+
+Steps 9-13: endstop mapping confirmed on hardware (8b50c29), unlock + halt table (a02251f), framed file transfer + fake machine (21d89ea), filesystem writes verified end to end (3429f5b); diary backfilled
+
