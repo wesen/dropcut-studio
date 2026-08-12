@@ -1,0 +1,37 @@
+# Changelog
+
+## 2026-08-11
+
+- Created MZ1-003 for motion and job control plus a manual control UI. Design
+  only; deliberately no code, so the design is settled before anything in it can
+  move a machine tool.
+- Established **four risk classes** to replace the single motion predicate that
+  MZ1-001 used. That predicate produced a real bug — `time` was refused, so
+  identity queries silently failed — and it cannot express that `M821` (light on)
+  and `M3 S10000` (spindle at ten thousand RPM) are both M-codes. The classes are
+  motion, state-enabling, accessory and data, plus **Class 0: commands that only
+  stop things, which are never gated.**
+- Identified the design's most useful property: continuous jog requires a
+  keepalive, so **if the host stops sending it the machine stops moving.** That
+  is a dead-man switch built into the firmware, and it is stronger than anything
+  our software can provide because it depends on our software *stopping* rather
+  than on it behaving correctly. The UI's job is to avoid defeating it.
+- Specified the continuous-jog stop as a handshake rather than fire-and-forget:
+  `0x19`, suppress keepalives immediately so they cannot fight the stop, wait for
+  the firmware's `^Y`.
+- Designed the manual control UI as the *safer test harness* rather than as a
+  convenience: testing motion through a CLI means composing commands while
+  standing next to a moving machine.
+- Recorded the first genuine security question in the project: once the page can
+  move the machine, an unauthenticated POST from anywhere on the LAN becomes a
+  motion command. ADR-012 defaults the server to loopback, requires a token and
+  same-origin otherwise.
+- Stated plainly what the preflight **cannot** establish: the axis limit indices
+  are inherited rather than verified, nothing knows whether a workpiece is
+  clamped or the right tool is fitted, and the cover interlock is a sensor rather
+  than a lock.
+- Scoped out probing, tool change and resume-at-line, each of which deserves its
+  own ticket.
+- Wrote a hardware bring-up sequence that begins with a dry run and an air cut,
+  and that includes deliberately verifying the dead-man on the real machine
+  before anyone relies on it.
