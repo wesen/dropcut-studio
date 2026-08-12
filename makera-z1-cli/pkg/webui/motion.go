@@ -112,8 +112,9 @@ func decodeBody(w http.ResponseWriter, r *http.Request, v any) bool {
 	return true
 }
 
-// runMotion executes one motion request with the single-flight rule.
-func (s *Server) runMotion(w http.ResponseWriter, r *http.Request, req makera.MotionRequest, opts makera.PreflightOptions) {
+// runMotion executes one motion request with the single-flight rule. An
+// optional note is echoed to the page (e.g. the low-RPM spindle warning).
+func (s *Server) runMotion(w http.ResponseWriter, r *http.Request, req makera.MotionRequest, opts makera.PreflightOptions, notes ...string) {
 	if !s.motionBusy.CompareAndSwap(false, true) {
 		writeJSON(w, http.StatusConflict, map[string]any{
 			"error": "a motion request is already in flight; requests are never queued"})
@@ -138,12 +139,18 @@ func (s *Server) runMotion(w http.ResponseWriter, r *http.Request, req makera.Mo
 		writeJSON(w, code, map[string]any{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	out := map[string]any{
 		"ok":          true,
 		"sent":        res.Sent,
 		"replies":     res.Replies,
 		"state_after": res.StateAfter.State,
-	})
+	}
+	for _, n := range notes {
+		if n != "" {
+			out["note"] = n
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // ---------------------------------------------------------------------------
@@ -242,6 +249,7 @@ func (s *Server) handleSpindle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var op makera.MotionOp
+	warn := ""
 	if b.On {
 		if !b.Confirm {
 			writeJSON(w, http.StatusPreconditionFailed, map[string]any{
@@ -253,13 +261,14 @@ func (s *Server) handleSpindle(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 			return
 		}
+		warn = makera.SpindleRPMWarning(b.RPM)
 	} else {
 		op = makera.SpindleOff() // a stop; no confirmation
 	}
 	s.runMotion(w, r, makera.MotionRequest{
 		Ops:    []makera.MotionOp{op},
 		Reason: "operator spindle toggle from control page",
-	}, makera.PreflightOptions{})
+	}, makera.PreflightOptions{}, warn)
 }
 
 type accessoryBody struct {

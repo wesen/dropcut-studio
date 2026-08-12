@@ -2,6 +2,8 @@ package cmds
 
 import (
 	"context"
+	"fmt"
+	"os"
 
 	"github.com/go-go-golems/glazed/pkg/cli"
 	"github.com/go-go-golems/glazed/pkg/cmds"
@@ -75,6 +77,9 @@ func (c *SpindleCommand) RunIntoGlazeProcessor(
 		var err error
 		if op, err = makera.SpindleOn(s.RPM); err != nil {
 			return err
+		}
+		if warn := makera.SpindleRPMWarning(s.RPM); warn != "" {
+			fmt.Fprintf(os.Stderr, "z1ctl: WARNING: %s\n", warn)
 		}
 	} else {
 		op = makera.SpindleOff()

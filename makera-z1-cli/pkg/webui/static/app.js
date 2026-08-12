@@ -474,7 +474,7 @@ armable($("unlockBtn"), "UNLOCK", async () => {
 armable($("spindleOn"), "START", async () => {
   const rpm = parseInt($("rpm").value, 10);
   const res = await post("/api/spindle", { on: true, rpm, confirm: true });
-  flash(`spindle: ${res.sent.join(" ")}`);
+  flash(res.note ? `spindle: ${res.sent.join(" ")} — ${res.note}` : `spindle: ${res.sent.join(" ")}`, !!res.note);
 });
 
 $("spindleOff").addEventListener("click", async () => {

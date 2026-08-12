@@ -43,7 +43,17 @@ const safeZMachineCoord = -3.0
 // meant in some other unit) before a byte reaches the socket.
 const (
 	maxJogDistanceMM = 1000
-	maxSpindleRPM    = 20000
+	// maxSpindleRPM is the official controller's Z1 slider maximum (13000;
+	// 15000 is C1-only — makera.kv sl_spindle).
+	maxSpindleRPM = 13000
+	// minStableSpindleRPM is the practical floor, from observation: at
+	// S1000 the P-controller limit-cycles — the duty needed to start the
+	// motor overshoots the target, the error flips, duty is driven to zero,
+	// the motor stops, repeat (spin-up/stop/spin-up, watched on hardware;
+	// PWMSpindleControl.cpp integrates P*error into duty with no minimum).
+	// S10000 regulates fine. The firmware has NO configured minimum, so
+	// targets below this are warned about rather than refused.
+	minStableSpindleRPM = 5000
 )
 
 // Jog speed: two firmware dialects, two units.
@@ -434,9 +444,22 @@ type spindleOnOp struct{ rpm int }
 // spinning whether or not the cover is closed.
 func SpindleOn(rpm int) (MotionOp, error) {
 	if rpm <= 0 || rpm > maxSpindleRPM {
-		return nil, errors.Errorf("spindle rpm %d outside (0, %d]", rpm, maxSpindleRPM)
+		return nil, errors.Errorf("spindle rpm %d outside (0, %d] (the official controller's Z1 maximum)", rpm, maxSpindleRPM)
 	}
 	return spindleOnOp{rpm: rpm}, nil
+}
+
+// SpindleRPMWarning returns advice for targets the controller regulates
+// poorly, or "" when the target is fine. Not a refusal: the boundary of
+// stable regulation is only bracketed (1000 hunts, 10000 fine), and probing
+// it deliberately is the operator's call.
+func SpindleRPMWarning(rpm int) string {
+	if rpm > 0 && rpm < minStableSpindleRPM {
+		return fmt.Sprintf(
+			"S%d is below ~%d rpm, where the spindle controller limit-cycles (spin-up/stop/spin-up, measured at S1000): "+
+				"the P-loop has no minimum duty and the motor cannot run that slowly", rpm, minStableSpindleRPM)
+	}
+	return ""
 }
 
 func (o spindleOnOp) render() []string    { return []string{fmt.Sprintf("M3 S%d", o.rpm)} }
