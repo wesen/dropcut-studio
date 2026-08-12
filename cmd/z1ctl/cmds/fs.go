@@ -208,10 +208,12 @@ func NewFsGroup() (*cobra.Command, error) {
 		Short: "Inspect the machine's filesystem",
 		Long: `Read-only filesystem access.
 
-Writing to the machine's SD card requires the framed file-transfer protocol,
-which is not implemented yet. Note also that the firmware's 'cat' command
-returns "File not found" for every file, including ones it has just listed, so
-reading file contents will also require the transfer path.`,
+'get' downloads through the framed file-transfer protocol. That is the only way
+to read a remote file: the firmware's 'cat' returns "File not found" for every
+file, including ones it has just listed.
+
+Uploading is implemented in the library but has no command yet, because it
+writes to the machine and has not been exercised against hardware.`,
 	}
 	ls, err := NewLsCommand()
 	if err != nil {
@@ -221,8 +223,12 @@ reading file contents will also require the transfer path.`,
 	if err != nil {
 		return nil, err
 	}
+	get, err := NewGetCommand()
+	if err != nil {
+		return nil, err
+	}
 	if err := cli.AddCommandsToRootCommand(group,
-		[]cmds.Command{ls, stat}, nil, parserOptions()...); err != nil {
+		[]cmds.Command{ls, stat, get}, nil, parserOptions()...); err != nil {
 		return nil, err
 	}
 	return group, nil

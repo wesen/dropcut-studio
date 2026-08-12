@@ -54,10 +54,19 @@ frame-decoder failures across five sessions):
 - frame codec, protocol strategies, autodetection
 - UDP discovery, TCP transport, session with deterministic command completion
 - status / diagnose report parsing, directory listings, checksums, WCS queries
+- endstop and cover interlock mapping, confirmed empirically
+- alarm clearing (`z1ctl unlock`), the first authorised command
+- framed **download** — verified on hardware over 1 block, 41 blocks, and the
+  cache-hit path
+
+Implemented but NOT exercised against hardware:
+
+- framed **upload**. It passes against the fake machine, including out-of-order
+  block requests and retry, but writes to the machine. First real run should be
+  a scratch path with an operator present.
 
 Not implemented:
 
-- the framed file transfer (upload / download) — the highest-risk component
 - motion, job control
 - the USB serial transport
 

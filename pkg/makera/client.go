@@ -93,8 +93,9 @@ type Client struct {
 	proto Protocol
 	opts  Options
 
-	mode atomic.Int32
-	msgs chan Message
+	mode   atomic.Int32
+	msgs   chan Message
+	frames chan Frame
 
 	mu     sync.RWMutex
 	info   MachineInfo
@@ -116,6 +117,7 @@ func Dial(ctx context.Context, opts Options) (*Client, error) {
 		tr:     tr,
 		opts:   opts,
 		msgs:   make(chan Message, 256),
+		frames: make(chan Frame, 8),
 		logger: log.With().Str("component", "makera.Client").Str("addr", tr.Describe()).Logger(),
 	}
 
@@ -183,6 +185,24 @@ func (c *Client) readLoop(ctx context.Context) {
 			}
 			return
 		}
+		// During a transfer the driver owns the frame stream. This is the only
+		// place ownership is decided, which is why no second consumer can race
+		// for the socket.
+		if Mode(c.mode.Load()) == ModeTransfer {
+			fp, ok := c.proto.(FramedProtocol)
+			if !ok {
+				continue
+			}
+			for _, f := range fp.FeedFrames(buf[:n]) {
+				select {
+				case c.frames <- f:
+				case <-ctx.Done():
+					return
+				}
+			}
+			continue
+		}
+
 		for _, m := range c.proto.Feed(buf[:n]) {
 			// A firmware announcement can switch the dialect mid-session.
 			if announced := ProtocolFromAnnouncement(m.Text); announced != "" && announced != c.proto.Name() {

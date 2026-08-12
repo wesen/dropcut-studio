@@ -100,6 +100,22 @@ func (p *MakeraProtocol) EncodeFileCommand(data []byte) []byte {
 	return BuildFrame(PTypeFileStart, data)
 }
 
+// FramedProtocol is implemented by protocols whose file transfer uses the
+// framed exchange. The transfer driver needs raw frames, including the
+// file-transfer types that Feed deliberately hides from the control path.
+//
+// Callers must use either Feed or FeedFrames for a given chunk of bytes, never
+// both: they share one decoder, and feeding the same bytes twice would desync
+// it.
+type FramedProtocol interface {
+	FeedFrames(data []byte) []Frame
+}
+
+var _ FramedProtocol = &MakeraProtocol{}
+
+// FeedFrames returns every decoded frame, including file-transfer types.
+func (p *MakeraProtocol) FeedFrames(data []byte) []Frame { return p.dec.Feed(data) }
+
 func (p *MakeraProtocol) Feed(data []byte) []Message {
 	var out []Message
 	for _, f := range p.dec.Feed(data) {
