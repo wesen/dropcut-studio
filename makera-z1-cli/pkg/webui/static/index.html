@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DROPCUT Control</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+    <link rel="stylesheet" href="/static/app.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="header">
+        <div class="brand"><b>DROPCUT</b> <span>CONTROL</span></div>
+        <div class="spacer"></div>
+        <div class="status" id="conn"><span class="dim">connecting…</span></div>
+      </header>
+
+      <div class="body">
+        <!-- ------------------------------ left ------------------------------ -->
+        <section class="left">
+          <div class="pane-title">Digital readout</div>
+
+          <div class="dro-wrap">
+            <div class="dro" id="dro">
+              <div class="dro-head">
+                <span class="dim">axis</span>
+                <span class="dim">work</span>
+                <span class="dim">machine</span>
+              </div>
+              <div class="axis" data-axis="X"><span class="l">X</span><span class="v w">—</span><span class="v m">—</span></div>
+              <div class="axis" data-axis="Y"><span class="l">Y</span><span class="v w">—</span><span class="v m">—</span></div>
+              <div class="axis" data-axis="Z"><span class="l">Z</span><span class="v w">—</span><span class="v m">—</span></div>
+              <div class="axis" data-axis="A"><span class="l">A</span><span class="v w">—</span><span class="v m">—</span></div>
+              <div class="axis" data-axis="B"><span class="l">B</span><span class="v w">—</span><span class="v m">—</span></div>
+              <div class="t" id="homedNote"></div>
+            </div>
+          </div>
+
+          <div class="pane-title">Spindle &amp; feed</div>
+          <div class="rows" id="rates">
+            <div class="row"><span class="key">state</span><span class="val" id="state">—</span></div>
+            <div class="row"><span class="key">feed</span><span class="val" id="feed">—</span></div>
+            <div class="row"><span class="key">spindle</span><span class="val" id="spindle">—</span></div>
+            <div class="row"><span class="key">tool</span><span class="val" id="tool">—</span></div>
+            <div class="row"><span class="key">job</span><span class="val" id="job">idle</span></div>
+          </div>
+
+          <div class="pane-title">Motion</div>
+          <div class="motion" id="motion">
+            <div class="jog">
+              <button disabled>Y+</button>
+              <button disabled>Z+</button>
+              <button disabled>X−</button>
+              <button disabled>X+</button>
+              <button disabled>Y−</button>
+              <button disabled>Z−</button>
+              <button disabled>HOME</button>
+              <button disabled class="danger">HOLD</button>
+            </div>
+            <div class="note error">
+              <b>Motion is disabled in this build.</b>
+              The controls above are shown so the eventual layout is visible, but
+              nothing is wired to the machine. Motion will be enabled only after
+              the diagnose <code>E:</code> endstop mapping is confirmed on
+              hardware — the cover-interlock bit cannot currently be located, and
+              a preflight that cannot verify the cover is not a preflight.
+            </div>
+          </div>
+        </section>
+
+        <!-- ------------------------------ right ----------------------------- -->
+        <section class="right">
+          <div class="tabs">
+            <button class="tab active" data-tab="files">Files</button>
+            <button class="tab" data-tab="checks">Checks</button>
+            <button class="tab" data-tab="machine">Machine</button>
+            <button class="tab" data-tab="raw">Raw</button>
+          </div>
+
+          <div class="panel-body">
+            <div class="tabpane active" id="tab-files">
+              <div class="toolbar">
+                <span class="dim">dir</span>
+                <input id="dir" value="/sd/gcodes" spellcheck="false" />
+                <button id="reload">Reload</button>
+                <span class="dim" id="filesNote"></span>
+              </div>
+              <div class="rows" id="files"><div class="empty">loading…</div></div>
+            </div>
+
+            <div class="tabpane" id="tab-checks">
+              <div class="rows" id="checks"><div class="empty">loading…</div></div>
+            </div>
+
+            <div class="tabpane" id="tab-machine">
+              <div class="rows" id="machine"><div class="empty">loading…</div></div>
+            </div>
+
+            <div class="tabpane" id="tab-raw">
+              <div class="note">
+                The status report exactly as the machine sent it. Two of these
+                keys — <code>E:</code> and <code>OTA:</code> — appear in no
+                published client, which is why the parser decodes generically
+                before interpreting named fields.
+              </div>
+              <pre class="raw" id="raw">—</pre>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <footer class="transport">
+        <span class="dim">poll</span>
+        <select id="interval">
+          <option value="500">500 ms</option>
+          <option value="1000" selected>1 s</option>
+          <option value="2000">2 s</option>
+          <option value="0">paused</option>
+        </select>
+        <span class="spacer"></span>
+        <span class="dim" id="tick">—</span>
+      </footer>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

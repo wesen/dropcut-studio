@@ -1,0 +1,37 @@
+## Licence
+
+z1ctl is licensed GPL-2.0. The licence covers every file in this directory tree;
+individual source files deliberately carry no per-file licence header.
+
+## Attribution
+
+z1ctl speaks the Makera / Carvera machine protocol. The protocol was documented
+by reading the open-source projects below, and this tool would not exist without
+them. z1ctl is licensed GPL-2.0, matching the Carvera Community Controller.
+
+- Carvera Community Controller — https://github.com/Carvera-Community/Carvera_Controller
+  (GPL-2.0) The authoritative reference for the framed protocol and for Makera Z1
+  support. Its `carveracontroller/protocols/` package is the clearest description
+  of this protocol that exists. Where z1ctl code is derived from this project,
+  the derived file says so in its header.
+  That project in turn credits bCNC (GPL-2.0, Vasilis Vlachoudis) and the XMODEM
+  library (MIT, Wijnand Modderman / Jeff Quast / Kris Hardy), whose lineage the
+  file-transfer code carries.
+
+- MakeraInc CarveraController — https://github.com/MakeraInc/CarveraController
+  (GPL-3.0) The original controller and the origin of the framing design. Used
+  as a factual reference only; no code from it appears in z1ctl. GPL-3.0 and
+  GPL-2.0-only are mutually incompatible, so code from this project must not be
+  incorporated while z1ctl remains GPL-2.0-only.
+
+- hagmonk/carvera-cli — https://github.com/hagmonk/carvera-cli
+  For the command-line shape and the echo-sentinel completion technique. Ideas
+  only: the repository carries no licence file, no licence field in its
+  packaging metadata, and no statement in its README, so no code was reused.
+
+- GridSpace/carve-control — https://github.com/GridSpace/carve-control
+  (MIT) For protocol inspection, proxying and machine-spoofing patterns.
+
+The protocol specification this implementation follows is published at
+`docs/protocol.md`. Hardware ground truth is at
+`docs/observations-z1-1.0.15.md`.
