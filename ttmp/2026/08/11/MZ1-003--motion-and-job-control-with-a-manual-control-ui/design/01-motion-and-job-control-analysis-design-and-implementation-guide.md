@@ -262,16 +262,21 @@ its continuous form has a property that makes it unusually safe to build on.
 ### 4.1 Step jog
 
 ```
-$J X10          move 10 mm in +X at the default feed
-$J X-1 F600     move 1 mm in -X at 600 mm/min
+$J X10          move 10 mm in +X at maximum speed
+$J X-1 F0.25    move 1 mm in -X at 25% of the axis maximum
 ```
 
 Each command is one bounded move. It completes or it does not. There is no
 ongoing state to manage, which makes step jog the right first target.
 
-The direction argument is an axis letter and a signed distance. Feed is optional;
-upstream omits `F` when its configured jog speed is zero, letting the firmware
-choose.
+The direction argument is an axis letter and a signed distance.
+
+> **Corrected during bring-up (2026-08-11).** This section originally showed
+> `F600`, mm/min-style, copied from the reference controller. On STOCK
+> firmware `F` is a *scale of max_rate* — `F0.5` is half speed, and anything
+> ≥ 1 means maximum, which is why F1/F10/F300/F1000 all moved identically on
+> the real machine. The community firmware later redefined `F` as mm/min and
+> moved the scale to `S`. Full evidence: MZ1-001 `reference/03` §11.
 
 ### 4.2 Continuous jog, and the dead-man property
 

@@ -53,3 +53,12 @@ Implemented Phases 1-4: risk-class safety core with typed MotionOps and prefligh
 
 - /home/manuel/workspaces/2026-08-11/cnc-control-dropcut/dropcut-studio/makera-z1-cli/pkg/makera/motion.go — The authorised path
 
+
+## 2026-08-11
+
+Hardware bring-up finding: $J F is a scale of max_rate on stock firmware (F1..F1000 all ran at max, confirmed in stock SimpleShell::jog). Jog speed is now a percent of axis maximum across CLI/API/UI. Firmware source excerpts vendored; open questions answered from source: play takes -v only (no -O on stock), play-while-playing is refused by firmware, play silently no-ops when unhomed, $H X single-axis homing is supported by source.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-08-11/cnc-control-dropcut/dropcut-studio/ttmp/2026/08/11/MZ1-003--motion-and-job-control-with-a-manual-control-ui/vendor/README.md — Firmware evidence provenance
+

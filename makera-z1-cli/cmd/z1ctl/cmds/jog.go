@@ -25,7 +25,7 @@ var _ cmds.GlazeCommand = &JogCommand{}
 type jogSettings struct {
 	Axis       string  `glazed:"axis"`
 	Distance   string  `glazed:"distance"`
-	Feed       float64 `glazed:"feed"`
+	Speed      float64 `glazed:"speed"`
 	Continuous bool    `glazed:"continuous"`
 	For        string  `glazed:"for"`
 }
@@ -43,8 +43,12 @@ func NewJogCommand() (*JogCommand, error) {
 Step jog sends one bounded relative move and is the form to use from the
 command line:
 
-  z1ctl jog X 10 --confirm             10 mm in +X at the default feed
-  z1ctl jog Z-0.1 --feed 300 --confirm
+  z1ctl jog X 10 --confirm             10 mm in +X at full speed
+  z1ctl jog Z-0.1 --speed 10 --confirm 0.1 mm in -Z at 10% of the axis maximum
+
+Speed is a PERCENT OF THE AXIS MAXIMUM, because that is what this firmware's
+$J implements: F is a scale of max_rate, and any feed-like value >= 1 simply
+means "maximum". Measured on hardware; see pkg/makera/motion.go.
 
 Negative distances: a bare "-0.1" is read as flags by the argument parser, so
 write the axis and distance as ONE token ($J style), or end flag parsing with
@@ -76,9 +80,9 @@ machine is in Alarm, or while a job is running.`),
 				fields.WithHelp("Signed distance in mm; with --continuous, a bare + or - direction. May be combined into the axis token")),
 		),
 		cmds.WithFlags(append(motionFlagDefs(),
-			fields.New("feed", fields.TypeFloat,
+			fields.New("speed", fields.TypeFloat,
 				fields.WithDefault(0.0),
-				fields.WithHelp("Feed in mm/min; 0 lets the firmware choose")),
+				fields.WithHelp("Jog speed as a percent of the axis maximum; 0 or 100 = maximum")),
 			fields.New("continuous", fields.TypeBool,
 				fields.WithDefault(false),
 				fields.WithHelp("Continuous jog held for --for, stopped by the 0x19/^Y handshake")),
@@ -117,7 +121,7 @@ func (c *JogCommand) RunIntoGlazeProcessor(
 		if err != nil {
 			return errors.Errorf("distance %q is not a number (use --continuous for a held jog)", s.Distance)
 		}
-		op, err := makera.StepJog(axis, dist, s.Feed)
+		op, err := makera.StepJog(axis, dist, s.Speed)
 		if err != nil {
 			return err
 		}
@@ -153,7 +157,7 @@ func (c *JogCommand) runContinuous(
 	if err != nil {
 		return err
 	}
-	op, err := makera.ContinuousJog(axis, positive, s.Feed)
+	op, err := makera.ContinuousJog(axis, positive, s.Speed)
 	if err != nil {
 		return err
 	}
@@ -171,7 +175,7 @@ func (c *JogCommand) runContinuous(
 	}
 	defer func() { _ = client.Close() }()
 
-	session, err := client.JogStart(ctx, axis, positive, s.Feed,
+	session, err := client.JogStart(ctx, axis, positive, s.Speed,
 		makera.PreflightOptions{AllowOpenCover: f.AllowOpenCover})
 	if err != nil {
 		return err

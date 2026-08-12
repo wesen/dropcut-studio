@@ -43,9 +43,41 @@ const safeZMachineCoord = -3.0
 // meant in some other unit) before a byte reaches the socket.
 const (
 	maxJogDistanceMM = 1000
-	maxFeedRate      = 10000 // upstream's jog-speed ceiling, mm/min
 	maxSpindleRPM    = 20000
 )
+
+// Jog speed is a PERCENTAGE OF THE AXIS MAXIMUM, not a feedrate.
+//
+// Measured on hardware (2026-08-11): step jogs at F1, F10, F300 and F1000 all
+// ran at identical, maximum speed. The stock firmware source explains why —
+// SimpleShell::jog reads F as a scale of max_rate:
+//
+//	usage: $J X0.01 [F0.5] - axis can be XYZABC, optional speed is scale of max_rate
+//	THEROBOT->delta_move(delta, rate_mm_s*scale, n_motors);
+//	(MZ1-003/vendor/stock-carvera-firmware/src/modules/utils/simpleshell/SimpleShell.cpp)
+//
+// so every value >= 1 means "at least max" and the planner clamps it. The
+// community firmware CHANGED this: there F is mm/min (divided by 60) and the
+// scale moved to an S word. The reference controller sends mm/min values,
+// which on stock firmware silently all mean "max speed" — do not copy it.
+//
+// A percentage of max is therefore the one honest unit for this machine, and
+// it renders as the fraction stock firmware expects. If community-firmware
+// support is ever needed, emit `S<fraction>` there instead — its meaning
+// matches — never `F<fraction>`, which community reads as mm/min.
+func renderJogSpeed(pct float64) string {
+	if pct <= 0 || pct >= 100 {
+		return "" // omit: firmware default is the axis maximum
+	}
+	return " F" + num(pct/100)
+}
+
+func checkSpeedPct(pct float64) error {
+	if pct < 0 || pct > 100 {
+		return errors.Errorf("jog speed %v%% outside [0, 100] (percent of the axis maximum; 0 = maximum)", pct)
+	}
+	return nil
+}
 
 // Axis is one of the machine's five axes.
 type Axis byte
@@ -133,15 +165,16 @@ type MotionOp interface {
 // ---------------------------------------------------------------------------
 
 type stepJogOp struct {
-	axis Axis
-	dist float64
-	feed float64
+	axis     Axis
+	dist     float64
+	speedPct float64
 }
 
-// StepJog is one bounded relative move: `$J X-1 F600`. Feed 0 lets the
-// firmware choose. Jogging is permitted on an unhomed machine — a relative
+// StepJog is one bounded relative move: `$J X-1 F0.25` at 25% of the axis
+// maximum. speedPct is a percentage of max rate (see renderJogSpeed for why);
+// 0 means maximum. Jogging is permitted on an unhomed machine — a relative
 // move is exactly how an operator repositions one.
-func StepJog(axis Axis, distanceMM, feed float64) (MotionOp, error) {
+func StepJog(axis Axis, distanceMM, speedPct float64) (MotionOp, error) {
 	if _, err := ParseAxis(string(axis)); err != nil {
 		return nil, err
 	}
@@ -151,18 +184,14 @@ func StepJog(axis Axis, distanceMM, feed float64) (MotionOp, error) {
 	if distanceMM < -maxJogDistanceMM || distanceMM > maxJogDistanceMM {
 		return nil, errors.Errorf("jog distance %v exceeds the %d mm sanity bound", distanceMM, maxJogDistanceMM)
 	}
-	if err := checkFeed(feed); err != nil {
+	if err := checkSpeedPct(speedPct); err != nil {
 		return nil, err
 	}
-	return stepJogOp{axis: axis, dist: distanceMM, feed: feed}, nil
+	return stepJogOp{axis: axis, dist: distanceMM, speedPct: speedPct}, nil
 }
 
 func (o stepJogOp) render() []string {
-	cmd := fmt.Sprintf("$J %c%s", o.axis, num(o.dist))
-	if o.feed > 0 {
-		cmd += " F" + num(o.feed)
-	}
-	return []string{cmd}
+	return []string{fmt.Sprintf("$J %c%s%s", o.axis, num(o.dist), renderJogSpeed(o.speedPct))}
 }
 func (o stepJogOp) class() RiskClass    { return ClassMotion }
 func (o stepJogOp) requiresHomed() bool { return false }
@@ -173,21 +202,22 @@ func (o stepJogOp) Describe() string {
 type contJogOp struct {
 	axis     Axis
 	positive bool
-	feed     float64
+	speedPct float64
 }
 
 // ContinuousJog moves while keepalives arrive and stops when they cease:
 // `$J -c X1` / `$J -c X-1`, direction encoded as a signed 1 exactly as the
-// reference controller's pendant sends it. Use Client.JogStart, which owns the
+// reference controller's pendant sends it. speedPct is a percentage of the
+// axis maximum (see renderJogSpeed). Use Client.JogStart, which owns the
 // keepalive; this constructor exists so dry runs can render the command.
-func ContinuousJog(axis Axis, positive bool, feed float64) (MotionOp, error) {
+func ContinuousJog(axis Axis, positive bool, speedPct float64) (MotionOp, error) {
 	if _, err := ParseAxis(string(axis)); err != nil {
 		return nil, err
 	}
-	if err := checkFeed(feed); err != nil {
+	if err := checkSpeedPct(speedPct); err != nil {
 		return nil, err
 	}
-	return contJogOp{axis: axis, positive: positive, feed: feed}, nil
+	return contJogOp{axis: axis, positive: positive, speedPct: speedPct}, nil
 }
 
 func (o contJogOp) render() []string {
@@ -195,11 +225,7 @@ func (o contJogOp) render() []string {
 	if !o.positive {
 		dir = "-1"
 	}
-	cmd := fmt.Sprintf("$J -c %c%s", o.axis, dir)
-	if o.feed > 0 {
-		cmd += " F" + num(o.feed)
-	}
-	return []string{cmd}
+	return []string{fmt.Sprintf("$J -c %c%s%s", o.axis, dir, renderJogSpeed(o.speedPct))}
 }
 func (o contJogOp) class() RiskClass    { return ClassMotion }
 func (o contJogOp) requiresHomed() bool { return false }
@@ -477,13 +503,6 @@ func (o playOp) class() RiskClass    { return ClassMotion }
 func (o playOp) requiresHomed() bool { return true }
 func (o playOp) Describe() string    { return "PLAY " + o.path }
 
-func checkFeed(feed float64) error {
-	if feed < 0 || feed > maxFeedRate {
-		return errors.Errorf("feed %v outside [0, %d] mm/min (0 = firmware default)", feed, maxFeedRate)
-	}
-	return nil
-}
-
 // ---------------------------------------------------------------------------
 // Requests
 // ---------------------------------------------------------------------------
@@ -642,8 +661,8 @@ type JogSession struct {
 // where the process holding the terminal is the held button. Class 1:
 // preflights fresh, refuses a second concurrent jog, and does not require
 // homing (the jog is relative).
-func (c *Client) JogStart(ctx context.Context, axis Axis, positive bool, feed float64, opts PreflightOptions) (*JogSession, error) {
-	return c.jogStart(ctx, axis, positive, feed, opts, true)
+func (c *Client) JogStart(ctx context.Context, axis Axis, positive bool, speedPct float64, opts PreflightOptions) (*JogSession, error) {
+	return c.jogStart(ctx, axis, positive, speedPct, opts, true)
 }
 
 // JogStartManual begins a continuous jog whose keepalives the CALLER emits by
@@ -653,12 +672,12 @@ func (c *Client) JogStart(ctx context.Context, axis Axis, positive bool, feed fl
 // alive without a human. When the calls stop — released button, hidden tab,
 // crashed browser — the firmware's own dead-man stops the axis; nothing on
 // the server needs to notice for the machine to be safe.
-func (c *Client) JogStartManual(ctx context.Context, axis Axis, positive bool, feed float64, opts PreflightOptions) (*JogSession, error) {
-	return c.jogStart(ctx, axis, positive, feed, opts, false)
+func (c *Client) JogStartManual(ctx context.Context, axis Axis, positive bool, speedPct float64, opts PreflightOptions) (*JogSession, error) {
+	return c.jogStart(ctx, axis, positive, speedPct, opts, false)
 }
 
-func (c *Client) jogStart(ctx context.Context, axis Axis, positive bool, feed float64, opts PreflightOptions, auto bool) (*JogSession, error) {
-	op, err := ContinuousJog(axis, positive, feed)
+func (c *Client) jogStart(ctx context.Context, axis Axis, positive bool, speedPct float64, opts PreflightOptions, auto bool) (*JogSession, error) {
+	op, err := ContinuousJog(axis, positive, speedPct)
 	if err != nil {
 		return nil, err
 	}

@@ -150,9 +150,11 @@ func (s *Server) runMotion(w http.ResponseWriter, r *http.Request, req makera.Mo
 // ---------------------------------------------------------------------------
 
 type jogStepBody struct {
-	Axis           string  `json:"axis"`
-	Distance       float64 `json:"distance"`
-	Feed           float64 `json:"feed"`
+	Axis     string  `json:"axis"`
+	Distance float64 `json:"distance"`
+	// SpeedPct is a percent of the axis maximum — what stock firmware's $J
+	// actually implements (see makera.StepJog).
+	SpeedPct       float64 `json:"speed_pct"`
 	AllowOpenCover bool    `json:"allow_open_cover"`
 }
 
@@ -166,7 +168,7 @@ func (s *Server) handleJogStep(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
-	op, err := makera.StepJog(axis, b.Distance, b.Feed)
+	op, err := makera.StepJog(axis, b.Distance, b.SpeedPct)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
@@ -294,7 +296,7 @@ func (s *Server) handleWcsZero(w http.ResponseWriter, r *http.Request) {
 type jogStartBody struct {
 	Axis           string  `json:"axis"`
 	Positive       bool    `json:"positive"`
-	Feed           float64 `json:"feed"`
+	SpeedPct       float64 `json:"speed_pct"`
 	AllowOpenCover bool    `json:"allow_open_cover"`
 }
 
@@ -322,7 +324,7 @@ func (s *Server) handleJogStart(w http.ResponseWriter, r *http.Request) {
 	var session *makera.JogSession
 	err = s.withClient(ctx, func(c *makera.Client) error {
 		var err error
-		session, err = c.JogStartManual(ctx, axis, b.Positive, b.Feed,
+		session, err = c.JogStartManual(ctx, axis, b.Positive, b.SpeedPct,
 			makera.PreflightOptions{AllowOpenCover: b.AllowOpenCover})
 		return err
 	})

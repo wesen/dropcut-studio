@@ -24,8 +24,8 @@ func TestMotionOpValidation(t *testing.T) {
 		{"bad axis", func() (MotionOp, error) { return StepJog('Q', 1, 0) }},
 		{"zero distance", func() (MotionOp, error) { return StepJog(AxisX, 0, 0) }},
 		{"absurd distance", func() (MotionOp, error) { return StepJog(AxisX, 5000, 0) }},
-		{"negative feed", func() (MotionOp, error) { return StepJog(AxisX, 1, -5) }},
-		{"absurd feed", func() (MotionOp, error) { return StepJog(AxisX, 1, 99999) }},
+		{"negative speed", func() (MotionOp, error) { return StepJog(AxisX, 1, -5) }},
+		{"speed above 100 percent", func() (MotionOp, error) { return StepJog(AxisX, 1, 99999) }},
 		{"zero rpm", func() (MotionOp, error) { return SpindleOn(0) }},
 		{"absurd rpm", func() (MotionOp, error) { return SpindleOn(999999) }},
 		{"empty move", func() (MotionOp, error) { return RapidTo(true, PartialAxes{}, false) }},
@@ -52,9 +52,9 @@ func TestMotionOpRendering(t *testing.T) {
 		op   MotionOp
 		want []string
 	}{
-		{mustOp(StepJog(AxisX, 10, 600)), []string{"$J X10 F600"}},
+		{mustOp(StepJog(AxisX, 10, 25)), []string{"$J X10 F0.25"}},
 		{mustOp(StepJog(AxisY, -0.1, 0)), []string{"$J Y-0.1"}},
-		{mustOp(ContinuousJog(AxisZ, false, 800)), []string{"$J -c Z-1 F800"}},
+		{mustOp(ContinuousJog(AxisZ, false, 50)), []string{"$J -c Z-1 F0.5"}},
 		{mustOp(ContinuousJog(AxisX, true, 0)), []string{"$J -c X1"}},
 		{Home(), []string{"$H"}},
 		{SafeZ(), []string{"G53 G90 G0 Z-3"}},
@@ -117,17 +117,17 @@ func TestRequestClassIsTheMaximumAcrossOps(t *testing.T) {
 }
 
 func TestDryRunRendersDecodableFrames(t *testing.T) {
-	jog, _ := StepJog(AxisX, 10, 600)
+	jog, _ := StepJog(AxisX, 10, 25)
 	rep, err := DryRun(MotionRequest{Ops: []MotionOp{jog}, Reason: "test"})
 	require.NoError(t, err)
 	require.Len(t, rep.Steps, 1)
-	assert.Equal(t, "$J X10 F600", rep.Steps[0].Command)
+	assert.Equal(t, "$J X10 F0.25", rep.Steps[0].Command)
 
 	var dec Decoder
 	frames := dec.Feed(rep.Steps[0].Frame)
 	require.Len(t, frames, 1, "the dry-run frame must decode as exactly one frame")
 	assert.Equal(t, PTypeCtrlMulti, frames[0].Type)
-	assert.Equal(t, "$J X10 F600", string(frames[0].Payload))
+	assert.Equal(t, "$J X10 F0.25", string(frames[0].Payload))
 }
 
 // ---------------------------------------------------------------------------
@@ -231,17 +231,17 @@ func TestMotionSendsOpsInOrderAndStopsOnRefusal(t *testing.T) {
 	m := newFakeMachine(nil, 128)
 	c := newFakeClient(t, m)
 
-	jog, _ := StepJog(AxisX, 10, 600)
+	jog, _ := StepJog(AxisX, 10, 25)
 	res, err := c.Motion(context.Background(), MotionRequest{
 		Ops: []MotionOp{jog}, Reason: "unit test",
 	}, PreflightOptions{})
 	require.NoError(t, err)
-	assert.Equal(t, []string{"$J X10 F600"}, res.Sent)
+	assert.Equal(t, []string{"$J X10 F0.25"}, res.Sent)
 
 	m.mu.Lock()
 	sent := append([]string(nil), m.cmds...)
 	m.mu.Unlock()
-	assert.Contains(t, sent, "$J X10 F600")
+	assert.Contains(t, sent, "$J X10 F0.25")
 
 	// Now alarm the machine: the same request must be refused before any
 	// command is sent.
@@ -270,7 +270,7 @@ func TestJogKeepalivesRideTheStatusPoll(t *testing.T) {
 	m := newFakeMachine(nil, 128)
 	c := newFakeClient(t, m)
 
-	s, err := c.JogStart(context.Background(), AxisX, true, 600, PreflightOptions{})
+	s, err := c.JogStart(context.Background(), AxisX, true, 25, PreflightOptions{})
 	require.NoError(t, err)
 	defer func() { _ = s.Stop(context.Background()) }()
 
@@ -354,7 +354,7 @@ func TestManualJogForwardsKeepalivesOneToOne(t *testing.T) {
 	m := newFakeMachine(nil, 128)
 	c := newFakeClient(t, m)
 
-	s, err := c.JogStartManual(context.Background(), AxisX, true, 600, PreflightOptions{})
+	s, err := c.JogStartManual(context.Background(), AxisX, true, 25, PreflightOptions{})
 	require.NoError(t, err)
 
 	for i := 0; i < 3; i++ {

@@ -4,8 +4,8 @@
 
 - [ ] **Safety review of design guide §3 (risk classification) and §11 (preflight)** by someone who operates the machine
 - [ ] Settle the classification table in §3.1
-- [ ] Answer: does `play` take `-O` or `-v`?
-- [ ] Answer: does `$H X` (single-axis homing) work?
+- [x] Answer: does `play` take `-O` or `-v`?
+- [x] Answer: does `$H X` (single-axis homing) work?
 - [ ] Answer: which mechanism sets a work zero reliably?
 
 ## Phase 1 — Classification and dry run (no hardware)

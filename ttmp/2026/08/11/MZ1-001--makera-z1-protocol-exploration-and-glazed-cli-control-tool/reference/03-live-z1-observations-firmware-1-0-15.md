@@ -605,7 +605,36 @@ EOT (`-e` forms). ADR-004 stands.
 
 ---
 
-## 11. Reproducing this session
+## 11. `$J` speed: F is a SCALE OF MAX RATE, not a feedrate
+
+Observed 2026-08-11 during MZ1-003 bring-up: step jogs of 10 mm at F1, F10,
+F300 and F1000 all ran at identical, maximum speed, and status queries ~200 ms
+after send already reported `Idle` for values that, read as mm/min, implied
+minutes-long moves.
+
+The stock firmware source settles it (`SimpleShell::jog`,
+`MZ1-003/vendor/stock-carvera-firmware/src/modules/utils/simpleshell/SimpleShell.cpp`):
+
+```
+usage: $J X0.01 [F0.5] - axis can be XYZABC, optional speed is scale of max_rate
+...
+THEROBOT->delta_move(delta, rate_mm_s*scale, n_motors);
+```
+
+F multiplies the slowest involved axis's max rate; every value >= 1 means "at
+least maximum" and the planner clamps it. The useful range is (0, 1).
+
+The COMMUNITY firmware changed the syntax: there `Fnnn` is a true feedrate in
+mm/min (divided by 60) and the scale moved to an `S` word
+(`MZ1-003/vendor/carvera-community-firmware`, same file). The reference
+controller sends mm/min values — correct against community firmware, silently
+"always maximum" against stock. Another case of the controllers' source
+misleading about stock behaviour; observation outranks citation, again.
+
+z1ctl therefore expresses jog speed as a percent of the axis maximum
+everywhere and renders `F<pct/100>`.
+
+## 12. Reproducing this session
 
 ```bash
 # Passive; cannot affect the machine.

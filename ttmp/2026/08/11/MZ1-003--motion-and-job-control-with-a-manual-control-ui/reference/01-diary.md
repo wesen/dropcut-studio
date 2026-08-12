@@ -533,3 +533,78 @@ half-built device cache.
 ### Code review instructions
 
 - `cmd/z1ctl/cmds/root.go` (`z1ctlMiddlewares`), `connection.go` (`Resolve`).
+
+## Step 7: The F word means something else — jog speed becomes a percentage
+
+During bring-up the user jogged X-10 at F10, F1, F1000 and F300 and reported
+all four moves ran at the same speed. The logs corroborated: a 2-second F300
+move showed `Idle` 200 ms after send; only F1000 was ever caught in `Run`.
+Cloning the STOCK firmware settled it: `SimpleShell::jog` reads F as a scale
+of max_rate — `F0.5` is half speed, anything >= 1 is maximum. The community
+firmware later redefined F as mm/min and moved the scale to S, which is why
+the reference controller (and our code, copied from it) sent mm/min values
+that all silently meant "maximum".
+
+Jog speed is now a percent of the axis maximum everywhere — `--speed 25`
+renders `$J X10 F0.25` — and the same firmware reading answered three open
+questions for free.
+
+### Prompt Context
+
+**User prompt (verbatim):** "These all seem to go at the same speed?" (with four jog logs at F10/F1/F1000/F300)
+
+**Assistant interpretation:** The F parameter is not behaving as a feedrate;
+find out what it actually does before shipping a wrong unit.
+
+**Inferred user intent:** Jog speed control that actually controls speed.
+
+**Commit (code):** (this commit) — jog speed as percent of max; firmware evidence vendored
+
+### What I did
+
+- Cloned stock (`MakeraInc/CarveraFirmware` @ 1683b6f) and community
+  (`Carvera-Community/Carvera_Community_Firmware` @ 9ac0123) firmware; read
+  `SimpleShell::jog`, `Player::play_command`, `Endstops::process_home_command`.
+- Changed `StepJog`/`ContinuousJog`/`JogStart*` to take speed as percent of
+  max; render `F<pct/100>`; CLI flag `--feed` became `--speed`, the page's
+  feed box became "speed %" (default 25), API field `speed_pct`.
+- Trimmed the 68 MB of clones to 444 KB of cited files + provenance README
+  (`vendor/README.md`).
+- Recorded the finding as MZ1-001 observations §11; corrected the design
+  guide's §4.1 example in place with a dated note.
+
+### What I learned (beyond the F semantics)
+
+- Stock `play` takes only `-v` (verbose); `-O` is community-only. Open
+  question 1: answered — send no flag.
+- `play` while playing is refused by firmware: "Currently printing, abort
+  print first". Open question 7: answered.
+- **`play` on an unhomed machine silently returns** — no error line at all.
+  Our preflight requiring homed for play is not just correct, it is the only
+  source of an error message.
+- Single-axis homing is supported by stock source (axis letters parsed in
+  `process_home_command`). Open question 2: answered from source; still to be
+  exercised on the machine before `home --axis` is exposed.
+
+### What was tricky to build
+
+- The misleading evidence chain: the reference controller's UI offers
+  100–2000 mm/min jog speeds and sends them as F values — perfectly correct
+  against COMMUNITY firmware, silently "always max" against stock. Reading
+  the controller was not enough; only the firmware said the truth. Third
+  instance of "observation outranks citation" in this project.
+
+### What warrants a second pair of eyes
+
+- The speed-% unit choice: an operator used to mm/min may prefer it; percent
+  is what the firmware implements, but the UI copy should make sure nobody
+  reads "25" as mm/min.
+- If community firmware is ever supported, jog must emit `S<frac>` there,
+  never `F<frac>` (which community reads as 0.25 mm/min). Noted in
+  `renderJogSpeed`'s comment.
+
+### Code review instructions
+
+- `pkg/makera/motion.go` (`renderJogSpeed` comment block), MZ1-001
+  observations §11, `vendor/README.md` for the source citations.
+- `go run ./cmd/z1ctl jog X-10 --speed 10 --dry-run` → `$J X-10 F0.1`.
