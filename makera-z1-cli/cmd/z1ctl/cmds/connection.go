@@ -37,7 +37,7 @@ func NewConnectionSection() (schema.Section, error) {
 			fields.New("protocol", fields.TypeChoice,
 				fields.WithChoices("auto", "makera", "smoothie"),
 				fields.WithDefault("auto"),
-				fields.WithHelp("Wire protocol. 'auto' probes the machine and costs about 300ms; 'makera' is the fast path for a known Z1")),
+				fields.WithHelp("Wire protocol. 'auto' detects by silence and costs ~1.5s on a Z1 (measured); set 'makera' (or $Z1CTL_PROTOCOL) to skip it")),
 			fields.New("timeout", fields.TypeString,
 				fields.WithDefault("15s"),
 				fields.WithHelp("Per-command timeout")),
