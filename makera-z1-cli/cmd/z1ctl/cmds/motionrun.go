@@ -3,6 +3,7 @@ package cmds
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/go-go-golems/glazed/pkg/cmds/fields"
 	"github.com/go-go-golems/glazed/pkg/cmds/schema"
@@ -102,6 +103,7 @@ func runMotionRequest(ctx context.Context, vals *values.Values, gp middlewares.P
 			types.MRP("step", i+1),
 			types.MRP("command", cmd),
 			types.MRP("sent", true),
+			types.MRP("reply", strings.Join(res.Replies, " | ")),
 			types.MRP("state_after", res.StateAfter.State),
 			types.MRP("homed", res.StateAfter.Homed),
 		)); err != nil {

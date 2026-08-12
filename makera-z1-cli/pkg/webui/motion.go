@@ -141,6 +141,7 @@ func (s *Server) runMotion(w http.ResponseWriter, r *http.Request, req makera.Mo
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":          true,
 		"sent":        res.Sent,
+		"replies":     res.Replies,
 		"state_after": res.StateAfter.State,
 	})
 }

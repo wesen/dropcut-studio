@@ -742,7 +742,12 @@ func DryRun(req MotionRequest) (DryRunReport, error) {
 
 // MotionResult reports what a motion request did.
 type MotionResult struct {
-	Sent       []string
+	Sent []string
+	// Replies holds every text line the machine answered, per command sent.
+	// The firmware explains its refusals in prose ("WARNING: Nothing to
+	// home", "Currently printing, abort print first") while still printing
+	// "ok" — discarding this text once hid a silent homing no-op.
+	Replies    []string
 	Preflight  PreflightReport
 	StateAfter Status
 }
@@ -788,7 +793,9 @@ func (c *Client) Motion(ctx context.Context, req MotionRequest, opts PreflightOp
 		}
 		for _, cmd := range cmds {
 			res.Sent = append(res.Sent, cmd)
-			if _, err := c.commandUnchecked(ctx, cmd); err != nil {
+			msgs, err := c.commandUnchecked(ctx, cmd)
+			res.Replies = append(res.Replies, Lines(msgs)...)
+			if err != nil {
 				return res, errors.Wrapf(err, "sending %q (%s); request stopped here, nothing was retried", cmd, op.Describe())
 			}
 		}
